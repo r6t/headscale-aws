@@ -1,1 +1,2 @@
-headscale-aws-venv/
+venv/
+*venv/

@@ -1,5 +1,26 @@
 {
  "Resources": {
+  "HeadscaleEC2": {
+   "Properties": {
+    "ImageId": "ami-08116b9957a259459",
+    "InstanceType": "t2.micro",
+    "SecurityGroupIds": [
+     {
+      "Ref": "MySecurityGroup"
+     }
+    ],
+    "SubnetId": {
+     "Ref": "MySubnet"
+    }
+   },
+   "Type": "AWS::EC2::Instance"
+  },
+  "HeadscaleEC2Keypair": {
+   "Properties": {
+    "KeyName": "HeadscaleEC2Keypair"
+   },
+   "Type": "AWS::EC2::KeyPair"
+  },
   "HeadscaleInternetGateway": {
    "Type": "AWS::EC2::InternetGateway"
   },
@@ -31,20 +52,15 @@
    },
    "Type": "AWS::EC2::VPCGatewayAttachment"
   },
-  "MyInstance": {
+  "KeyPairValue": {
    "Properties": {
-    "ImageId": "ami-0abcdef1234567890",
-    "InstanceType": "t2.micro",
-    "SecurityGroupIds": [
-     {
-      "Ref": "MySecurityGroup"
-     }
-    ],
-    "SubnetId": {
-     "Ref": "MySubnet"
+    "Name": "/headscale/ec2keypair",
+    "Type": "SecureString",
+    "Value": {
+     "Ref": "HeadscaleEC2Keypair"
     }
    },
-   "Type": "AWS::EC2::Instance"
+   "Type": "AWS::SSM::Parameter"
   },
   "MySecurityGroup": {
    "Properties": {
@@ -57,7 +73,7 @@
   },
   "MySecurityGroupIngress": {
    "Properties": {
-    "CidrIpv6": "2601:602:9300:9::1c55/128",
+    "CidrIpv6": "2001:558:600a:8b:fca3:bb10:9ff5:6b0a/128",
     "FromPort": "22",
     "GroupId": {
      "Ref": "MySecurityGroup"
