@@ -1,0 +1,53 @@
+Parameters:
+  PublicKeyParameter:
+    Description: SSH public key to be used with EC2 keypair
+    Type: String
+Resources:
+  EC2Keypair:
+    Properties:
+      KeyName: HeadscaleSSHPublicKey
+      PublicKeyMaterial: !Ref 'PublicKeyParameter'
+    Type: AWS::EC2::KeyPair
+  HeadscaleInternetGateway:
+    Type: AWS::EC2::InternetGateway
+  HeadscalePublicSubnet:
+    Properties:
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref 'HeadscaleVpc'
+    Type: AWS::EC2::Subnet
+  HeadscaleRouteTable:
+    Properties:
+      VpcId: !Ref 'HeadscaleVpc'
+    Type: AWS::EC2::RouteTable
+  HeadscaleVpc:
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: headscale
+    Type: AWS::EC2::VPC
+  HeadscaleVpcGatewayAttachment:
+    Properties:
+      InternetGatewayId: !Ref 'HeadscaleInternetGateway'
+      VpcId: !Ref 'HeadscaleVpc'
+    Type: AWS::EC2::VPCGatewayAttachment
+  Headscaleipv6CidrBlock:
+    Properties:
+      AmazonProvidedIpv6CidrBlock: true
+      VpcId: !Ref 'HeadscaleVpc'
+    Type: AWS::EC2::VPCCidrBlock
+  MySubnetRouteTableAssociation:
+    Properties:
+      RouteTableId: !Ref 'HeadscaleRouteTable'
+      SubnetId: !Ref 'HeadscalePublicSubnet'
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  Route:
+    Properties:
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'HeadscaleInternetGateway'
+      RouteTableId: !Ref 'HeadscaleRouteTable'
+    Type: AWS::EC2::Route

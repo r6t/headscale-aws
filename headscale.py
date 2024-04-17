@@ -17,6 +17,10 @@ vpc = template.add_resource(VPC(
     EnableDnsSupport=True,
     EnableDnsHostnames=True,
     InstanceTenancy="default",
+    Tags=[{
+        "Key": "Name",
+        "Value": "headscale",
+    }],
 ))
 
 vpcCidrBlock = template.add_resource(VPCCidrBlock(
@@ -51,14 +55,7 @@ subnet = template.add_resource(Subnet(
     "HeadscalePublicSubnet",
     VpcId=Ref(vpc),
     CidrBlock="10.0.1.0/24",
-#    AssignIpv6AddressOnCreation=True,
     MapPublicIpOnLaunch=True,
-))
-
-EC2SubnetCidrBlock = template.add_resource(SubnetCidrBlock(
-    'EC2SubnetCidrBlock',
-#   Ipv6CidrBlock="2600:1f14:2112:1c00::/56",
-    SubnetId=Ref(subnet),
 ))
 
 subnet_route_table_association = template.add_resource(SubnetRouteTableAssociation(
@@ -67,36 +64,11 @@ subnet_route_table_association = template.add_resource(SubnetRouteTableAssociati
     RouteTableId=Ref(route_table),
 ))
 
-security_group = template.add_resource(SecurityGroup(
-    "MySecurityGroup",
-    GroupDescription="Allow Headscale instance ingress traffic",
-    VpcId=Ref(vpc),
-))
-
-security_group_ingress = template.add_resource(SecurityGroupIngress(
-    "MySecurityGroupIngress",
-    GroupId=Ref(security_group),
-    IpProtocol="tcp",
-    FromPort="22",
-    ToPort="22",
-    CidrIpv6="2001:558:600a:8b:fca3:bb10:9ff5:6b0a/128",
-))
-
 ec2_keypair = template.add_resource(KeyPair(
     "EC2Keypair",
     KeyName="HeadscaleSSHPublicKey",
     PublicKeyMaterial=Ref(public_key_parameter)
 
 ))
-
-instance = template.add_resource(Instance(
-    "HeadscaleEC2",
-    ImageId="ami-08116b9957a259459",
-    InstanceType="t2.micro",
-    SubnetId=Ref(subnet),
-    SecurityGroupIds=[Ref(security_group)],
-    KeyName=Ref(ec2_keypair)
-))
-
 with open('cloudformation/headscale.yaml', 'w') as file:
     file.write(template.to_yaml())
