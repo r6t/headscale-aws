@@ -3,21 +3,50 @@ Parameters:
     Description: SSH public key to be used with EC2 keypair
     Type: String
 Resources:
+  EC2Instance:
+    Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      EbsOptimized: false
+      ImageId: ami-08116b9957a259459
+      InstanceType: t2.micro
+      KeyName: !Ref 'EC2Keypair'
+      SourceDestCheck: true
+      SubnetId: !Ref 'HeadscalePublicSubnet'
+      Tags:
+        - Key: Name
+          Value: headscale
+      Tenancy: default
+    Type: AWS::EC2::Instance
   EC2Keypair:
     Properties:
       KeyName: HeadscaleSSHPublicKey
       PublicKeyMaterial: !Ref 'PublicKeyParameter'
     Type: AWS::EC2::KeyPair
   HeadscaleInternetGateway:
+    Properties:
+      Tags:
+        - Key: Name
+          Value: headscale
     Type: AWS::EC2::InternetGateway
   HeadscalePublicSubnet:
     Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
       CidrBlock: 10.0.1.0/24
       MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: headscale-public
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::Subnet
   HeadscaleRouteTable:
     Properties:
+      Tags:
+        - Key: Name
+          Value: headscale
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::RouteTable
   HeadscaleVpc:
