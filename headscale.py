@@ -9,6 +9,12 @@ public_key_parameter = template.add_parameter(Parameter(
     Type="String",
 ))
 
+ssh_source_parameter = template.add_parameter(Parameter(
+    "SSHSource",
+    Description="Port to expose for ssh e.g., x.x.x.x/32",
+    Type="String",
+))
+
 vpc = template.add_resource(ec2.VPC(
     "HeadscaleVpc",
     CidrBlock="10.0.0.0/16",
@@ -73,9 +79,24 @@ subnet = template.add_resource(ec2.Subnet(
 ))
 
 subnet_route_table_association = template.add_resource(ec2.SubnetRouteTableAssociation(
-    "MySubnetRouteTableAssociation",
+    "HeadscaleSubnetRouteTableAssociation",
     SubnetId=Ref(subnet),
     RouteTableId=Ref(route_table),
+))
+
+security_group = template.add_resource(ec2.SecurityGroup(
+    "HeadscaleSecurityGroup",
+    GroupDescription="Headscale EC2 Security Group",
+    VpcId=Ref(vpc),
+    SecurityGroupIngress=[
+        ec2.SecurityGroupRule(
+            IpProtocol="tcp",
+            FromPort="22",
+            ToPort="22",
+            CidrIp=Ref(ssh_source_parameter),
+        ),
+    ],
+    Tags=[{"Key": "Name", "Value": "headscale"}],
 ))
 
 ec2_keypair = template.add_resource(ec2.KeyPair(
@@ -84,13 +105,20 @@ ec2_keypair = template.add_resource(ec2.KeyPair(
     PublicKeyMaterial=Ref(public_key_parameter)
 ))
 
+network_interface = ec2.NetworkInterfaceProperty(
+    DeviceIndex=0,
+    SubnetId=Ref(subnet),
+    AssociatePublicIpAddress=True,
+    GroupSet=[Ref(security_group)]
+)
+
 ec2_instance = template.add_resource(ec2.Instance(
-    'EC2Instance',
+    "EC2Instance",
     ImageId="ami-08116b9957a259459",
     InstanceType="t2.micro",
     KeyName=Ref(ec2_keypair),
     Tenancy="default",
-    SubnetId=Ref(subnet),
+    NetworkInterfaces=[network_interface],
     EbsOptimized=False,
     SourceDestCheck=True,
     AvailabilityZone=Select(

@@ -2,6 +2,9 @@ Parameters:
   PublicKeyParameter:
     Description: SSH public key to be used with EC2 keypair
     Type: String
+  SSHSource:
+    Description: Port to expose for ssh e.g., x.x.x.x/32
+    Type: String
 Resources:
   EC2Instance:
     Properties:
@@ -12,8 +15,13 @@ Resources:
       ImageId: ami-08116b9957a259459
       InstanceType: t2.micro
       KeyName: !Ref 'EC2Keypair'
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: '0'
+          GroupSet:
+            - !Ref 'HeadscaleSecurityGroup'
+          SubnetId: !Ref 'HeadscalePublicSubnet'
       SourceDestCheck: true
-      SubnetId: !Ref 'HeadscalePublicSubnet'
       Tags:
         - Key: Name
           Value: headscale
@@ -49,6 +57,24 @@ Resources:
           Value: headscale
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::RouteTable
+  HeadscaleSecurityGroup:
+    Properties:
+      GroupDescription: Headscale EC2 Security Group
+      SecurityGroupIngress:
+        - CidrIp: !Ref 'SSHSource'
+          FromPort: '22'
+          IpProtocol: tcp
+          ToPort: '22'
+      Tags:
+        - Key: Name
+          Value: headscale
+      VpcId: !Ref 'HeadscaleVpc'
+    Type: AWS::EC2::SecurityGroup
+  HeadscaleSubnetRouteTableAssociation:
+    Properties:
+      RouteTableId: !Ref 'HeadscaleRouteTable'
+      SubnetId: !Ref 'HeadscalePublicSubnet'
+    Type: AWS::EC2::SubnetRouteTableAssociation
   HeadscaleVpc:
     Properties:
       CidrBlock: 10.0.0.0/16
@@ -69,11 +95,6 @@ Resources:
       AmazonProvidedIpv6CidrBlock: true
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::VPCCidrBlock
-  MySubnetRouteTableAssociation:
-    Properties:
-      RouteTableId: !Ref 'HeadscaleRouteTable'
-      SubnetId: !Ref 'HeadscalePublicSubnet'
-    Type: AWS::EC2::SubnetRouteTableAssociation
   Route:
     Properties:
       DestinationCidrBlock: '0.0.0.0/0'
