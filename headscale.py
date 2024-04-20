@@ -1,5 +1,5 @@
-from troposphere import Parameter, Ref, Template, Select, GetAZs, Tag
-from troposphere import ec2
+from troposphere import Parameter, Ref, Template, Select, GetAZs, Tag, Output, Join, GetAtt
+from troposphere import awslambda, cloudformation, ec2, iam, ssm
 
 template = Template()
 
@@ -11,8 +11,140 @@ public_key_parameter = template.add_parameter(Parameter(
 
 ssh_source_parameter = template.add_parameter(Parameter(
     "SSHSource",
-    Description="Port to expose for ssh e.g., x.x.x.x/32",
+    Description="IPv4 Address to allow ssh in from. e.g., x.x.x.x/32", # move to ipv6 once ipv6 support is there
     Type="String",
+))
+
+hosted_zone_id_parameter = template.add_parameter(Parameter(
+    "HostedZoneId",
+    Description="Hosted Zone ID to use for the Headscale endpoint.",
+    Type="String",
+))
+
+lambda_execution_role = template.add_resource(iam.Role(
+    "LambdaExecutionRole",
+    AssumeRolePolicyDocument={
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"Service": ["lambda.amazonaws.com"]},
+            "Action": ["sts:AssumeRole"]
+        }]
+    },
+    Policies=[iam.Policy(
+        PolicyName="root",
+        PolicyDocument={
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                    "ec2:DescribeIpv6Pools",
+                    "ec2:DescribeVpcs",
+                    "ssm:PutParameter"
+                ],
+                "Resource": "*"
+            }]
+        }
+    )]
+))
+
+ipv6_lookup_function = template.add_resource(awslambda.Function(
+    "IPv6LookupLambdaFunction",
+    Code=awslambda.Code(
+        ZipFile=("""
+import requests
+import boto3
+import json
+
+
+def send_response(
+    event,
+    context,
+    response_status,
+    response_data,
+    physical_resource_id=None,
+    no_echo=False,
+    reason=None,
+):
+    response_url = event["ResponseURL"]
+
+    response_body = json.dumps(
+        {
+            "Status": response_status,
+            "Reason": reason
+            or f"See the details in CloudWatch Log Stream: {context.log_stream_name}",
+            "PhysicalResourceId": physical_resource_id or context.log_stream_name,
+            "StackId": event["StackId"],
+            "RequestId": event["RequestId"],
+            "LogicalResourceId": event["LogicalResourceId"],
+            "NoEcho": no_echo,
+            "Data": response_data,
+        }
+    )
+
+    headers = {"content-type": "", "content-length": str(len(response_body))}
+
+    try:
+        response = requests.put(response_url, data=response_body, headers=headers)
+        return response
+    except Exception as e:
+        raise Exception(f"Failed to send CloudFormation response with error {e}")
+
+
+def lambda_handler(event, context):
+    ec2_client = boto3.client("ec2")
+    ssm_client = boto3.client("ssm")
+
+    try:
+        # Finding the VPC ID by VPC Name (assuming the name is unique)
+        vpcs_response = ec2_client.describe_vpcs(
+            Filters=[{"Name": "tag:Name", "Values": ["headscale"]}]
+        )
+
+        if not vpcs_response["Vpcs"]:
+            raise ValueError("No VPC found with the name headscale")
+
+        vpc_id = vpcs_response["Vpcs"][0]["VpcId"]
+        ipv6_cidr_block = vpcs_response["Vpcs"][0]["Ipv6CidrBlockAssociationSet"][0][
+            "Ipv6CidrBlock"
+        ]
+
+        # Store the IPv6 CIDR block in SSM
+        ssm_client.put_parameter(
+            Name="headscaleIPv6CidrBlock",
+            Value=ipv6_cidr_block,
+            Type="String",
+            Overwrite=True,
+        )
+
+        send_response(
+            event,
+            context,
+            "SUCCESS",
+            {
+                "Message": f"Successfully updated SSM Parameter with IPv6 CIDR Block for VPC {vpc_id}"
+            },
+            physical_resource_id=vpc_id,
+        )
+
+    except Exception as e:
+        send_response(event, context, "FAILED", {"Message": str(e)}, reason=str(e))
+"""),
+    ),
+    Handler="index.lambda_handler",
+    Role=GetAtt(lambda_execution_role, "Arn"),
+    Runtime="python3.8",
+    Timeout=10,
+))
+
+ipv6_cidr_ssm = template.add_resource(ssm.Parameter(
+    "Ipv6CidrBlockSSMParameter",
+    Name="headscaleIpv6CidrBlock",
+    Type="String",
+    Value="The SSM parameter containing the Headscale VPC IPv6 CIDR block has not been set.",
 ))
 
 vpc = template.add_resource(ec2.VPC(
@@ -31,6 +163,11 @@ vpcCidrBlock = template.add_resource(ec2.VPCCidrBlock(
     "Headscaleipv6CidrBlock",
     VpcId=Ref(vpc),
     AmazonProvidedIpv6CidrBlock=True,
+))
+
+custom_resource = template.add_resource(cloudformation.CustomResource(
+    "TriggerLambdaCustomResource",
+    ServiceToken=GetAtt(ipv6_lookup_function, "Arn"),
 ))
 
 igw = template.add_resource(ec2.InternetGateway(

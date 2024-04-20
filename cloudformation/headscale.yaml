@@ -1,9 +1,12 @@
 Parameters:
+  HostedZoneId:
+    Description: Hosted Zone ID to use for the Headscale endpoint.
+    Type: String
   PublicKeyParameter:
     Description: SSH public key to be used with EC2 keypair
     Type: String
   SSHSource:
-    Description: Port to expose for ssh e.g., x.x.x.x/32
+    Description: IPv4 Address to allow ssh in from. e.g., x.x.x.x/32
     Type: String
 Resources:
   EC2Instance:
@@ -95,9 +98,68 @@ Resources:
       AmazonProvidedIpv6CidrBlock: true
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::VPCCidrBlock
+  IPv6LookupLambdaFunction:
+    Properties:
+      Code:
+        ZipFile: "\n            import requests\n            import boto3\n            import json\n            \n            def send_response(event, context, response_status, response_data, physical_resource_id=None,\
+          \ no_echo=False, reason=None):\n                response_url = event['ResponseURL']\n            \n                response_body = json.dumps({\n                    'Status' : response_status,\n\
+          \                    'Reason' : reason or f\"See the details in CloudWatch Log Stream: {context.log_stream_name}\",\n                    'PhysicalResourceId' : physical_resource_id or context.log_stream_name,\n\
+          \                    'StackId' : event['StackId'],\n                    'RequestId' : event['RequestId'],\n                    'LogicalResourceId' : event['LogicalResourceId'],\n             \
+          \       'NoEcho' : no_echo,\n                    'Data' : response_data\n                })\n            \n                headers = {\n                    'content-type' : '',\n             \
+          \       'content-length' : str(len(response_body))\n                }\n            \n                try:\n                    response = requests.put(response_url, data=response_body, headers=headers)\n\
+          \                    return response\n                except Exception as e:\n                    raise Exception(f\"Failed to send CloudFormation response with error {e}\")\n            \n  \
+          \          def lambda_handler(event, context):\n                ec2_client = boto3.client('ec2')\n                ssm_client = boto3.client('ssm')\n            \n                try:\n       \
+          \             # Finding the VPC ID by VPC Name (assuming the name is unique)\n                    vpcs_response = ec2_client.describe_vpcs(\n                        Filters=[{'Name': 'tag:Name',\
+          \ 'Values': ['headscale']}]\n                    )\n            \n                    if not vpcs_response['Vpcs']:\n                        raise ValueError('No VPC found with the name headscale')\n\
+          \            \n                    vpc_id = vpcs_response['Vpcs'][0]['VpcId']\n                    ipv6_cidr_block = vpcs_response['Vpcs'][0]['Ipv6CidrBlockAssociationSet'][0]['Ipv6CidrBlock']\n\
+          \            \n                    # Store the IPv6 CIDR block in SSM\n                    ssm_client.put_parameter(\n                        Name='headscaleIPv6CidrBlock',\n                 \
+          \       Value=ipv6_cidr_block,\n                        Type='String',\n                        Overwrite=True\n                    )\n            \n                    send_response(event, context,\
+          \ \"SUCCESS\", {'Message': f'Successfully updated SSM Parameter with IPv6 CIDR Block for VPC {vpc_id}'}, physical_resource_id=vpc_id)\n            \n                except Exception as e:\n  \
+          \                  send_response(event, context, \"FAILED\", {'Message': str(e)}, reason=str(e))\n            \n            "
+      Handler: index.lambda_handler
+      Role: !GetAtt 'LambdaExecutionRole.Arn'
+      Runtime: python3.8
+      Timeout: 10
+    Type: AWS::Lambda::Function
+  Ipv6CidrBlockSSMParameter:
+    Properties:
+      Name: headscaleIpv6CidrBlock
+      Type: String
+      Value: The SSM parameter containing the Headscale VPC IPv6 CIDR block has not been set.
+    Type: AWS::SSM::Parameter
+  LambdaExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ec2:DescribeIpv6Pools
+                  - ec2:DescribeVpcs
+                  - ssm:PutParameter
+                Effect: Allow
+                Resource: '*'
+            Version: '2012-10-17'
+          PolicyName: root
+    Type: AWS::IAM::Role
   Route:
     Properties:
       DestinationCidrBlock: '0.0.0.0/0'
       GatewayId: !Ref 'HeadscaleInternetGateway'
       RouteTableId: !Ref 'HeadscaleRouteTable'
     Type: AWS::EC2::Route
+  TriggerLambdaCustomResource:
+    Properties:
+      ServiceToken: !GetAtt 'IPv6LookupLambdaFunction.Arn'
+    Type: AWS::CloudFormation::CustomResource
