@@ -177,7 +177,7 @@ Resources:
     Type: AWS::Lambda::Function
   Ipv6CidrBlockSSMParameter:
     Properties:
-      Name: headscaleIpv6CidrBlock
+      Name: headscaleIPv6CidrBlock
       Type: String
       Value: The SSM parameter containing the Headscale VPC IPv6 CIDR block has not been set.
     Type: AWS::SSM::Parameter

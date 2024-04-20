@@ -132,7 +132,7 @@ def lambda_handler(event, context):
 
 ipv6_cidr_ssm = template.add_resource(ssm.Parameter(
     "Ipv6CidrBlockSSMParameter",
-    Name="headscaleIpv6CidrBlock",
+    Name="headscaleIPv6CidrBlock",
     Type="String",
     Value="The SSM parameter containing the Headscale VPC IPv6 CIDR block has not been set.",
 ))
