@@ -84,15 +84,11 @@ def lambda_handler(event, context):
             Overwrite=True
         )
 
-        response_data['Message'] = f"Successfully updated SSM Parameter with IPv6 CIDR Block for VPC {vpc_id}"
-
-        # Send success response
+        response_data['IPv6CidrBlock'] = ipv6_cidr_block
         cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data, physicalResourceId=vpc_id)
 
     except Exception as e:
-        # Adding the exception message to 'Message' for consistency
         response_data['Message'] = str(e)
-        # Send failure response
         cfnresponse.send(event, context, cfnresponse.FAILED, response_data, reason=str(e))
 """),
     ),
