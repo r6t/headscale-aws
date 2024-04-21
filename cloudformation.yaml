@@ -9,6 +9,63 @@ Parameters:
     Description: IPv6 CIDR to allow ssh in from
     Type: String
 Resources:
+  AAAARecord:
+    Properties:
+      HostedZoneId: !Ref 'HostedZoneId'
+      Name: headscale.r6t.io
+      ResourceRecords:
+        - !GetAtt 'DNSLambdaInvocation.Ipv6Address'
+      TTL: '30'
+      Type: AAAA
+    Type: AWS::Route53::RecordSet
+  DNSLambdaExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+              - Action:
+                  - ec2:DescribeInstances
+                Effect: Allow
+                Resource: '*'
+            Version: '2012-10-17'
+          PolicyName: LambdaEC2DescribeInstancesPolicy
+    Type: AWS::IAM::Role
+  DNSLambdaFunction:
+    DependsOn:
+      - EC2Instance
+    Properties:
+      Code:
+        ZipFile: "import boto3\nimport cfnresponse\n\ndef lambda_handler(event, context):\n    ec2_client = boto3.client('ec2')\n    \n    try:\n        if event['RequestType'] in ['Create', 'Update']:\n\
+          \            instance_id = event['ResourceProperties']['InstanceId']\n            response = ec2_client.describe_instances(InstanceIds=[instance_id])\n            \n            ipv6_addresses\
+          \ = response['Reservations'][0]['Instances'][0]['NetworkInterfaces'][0]['Ipv6Addresses']\n            if not ipv6_addresses:\n                raise ValueError(\"No IPv6 address found for the instance.\"\
+          )\n            \n            ipv6_address = ipv6_addresses[0]['Ipv6Address']\n            responseData = {'Ipv6Address': ipv6_address}\n            cfnresponse.send(event, context, cfnresponse.SUCCESS,\
+          \ responseData)\n        \n        elif event['RequestType'] == 'Delete':\n            cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, \"CustomResourcePhysicalID\")\n\n    except Exception\
+          \ as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event, context, cfnresponse.FAILED, responseData, \"CustomResourcePhysicalID\")"
+      Handler: index.lambda_handler
+      Role: !GetAtt 'DNSLambdaExecutionRole.Arn'
+      Runtime: python3.8
+      Timeout: 10
+    Type: AWS::Lambda::Function
+  DNSLambdaInvocation:
+    Properties:
+      InstanceId: !Ref 'EC2Instance'
+      ServiceToken: !GetAtt 'DNSLambdaFunction.Arn'
+    Type: AWS::CloudFormation::CustomResource
   EC2Instance:
     Properties:
       AvailabilityZone: !Select
@@ -48,7 +105,7 @@ Resources:
         - !GetAZs ''
       CidrBlock: 10.0.1.0/24
       Ipv6CidrBlock: !GetAtt 'TriggerLambdaCustomResource.Ipv6CidrBlock'
-      MapPublicIpOnLaunch: true
+      MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
           Value: headscale-public
@@ -121,6 +178,12 @@ Resources:
       Type: String
       Value: The SSM parameter containing the Headscale VPC IPv6 CIDR block has not been set.
     Type: AWS::SSM::Parameter
+  Ipv6Route:
+    Properties:
+      DestinationIpv6CidrBlock: ::/0
+      GatewayId: !Ref 'HeadscaleInternetGateway'
+      RouteTableId: !Ref 'HeadscaleRouteTable'
+    Type: AWS::EC2::Route
   LambdaExecutionRole:
     Properties:
       AssumeRolePolicyDocument:

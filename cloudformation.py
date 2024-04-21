@@ -1,5 +1,6 @@
 from troposphere import Parameter, Ref, Template, Select, GetAZs, Tag, Output, Join, GetAtt
 from troposphere import awslambda, cloudformation, ec2, iam, ssm
+from troposphere.route53 import RecordSetType
 
 template = Template()
 
@@ -54,7 +55,7 @@ ipv6_lambda_execution_role = template.add_resource(iam.Role(
     )]
 ))
 
-with open("lambda.py", "r") as l:
+with open("ipv6_cidr_lambda.py", "r") as l:
     lambda_function_code = l.read()
 
 ipv6_function = template.add_resource(awslambda.Function(
@@ -142,7 +143,7 @@ subnet = template.add_resource(ec2.Subnet(
     CidrBlock="10.0.1.0/24",
     Ipv6CidrBlock=GetAtt(ipv6_custom_resource, "Ipv6CidrBlock"),
     AssignIpv6AddressOnCreation=True,
-    MapPublicIpOnLaunch=True,
+    MapPublicIpOnLaunch=False,
     AvailabilityZone=Select(
         "0",
         GetAZs("")
@@ -203,6 +204,73 @@ ec2_instance = template.add_resource(ec2.Instance(
         Tag("Name", "headscale")
     ]
 ))
+
+endpoint_address_execution_role = template.add_resource(iam.Role(
+    "DNSLambdaExecutionRole",
+    AssumeRolePolicyDocument={
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"Service": ["lambda.amazonaws.com"]},
+            "Action": ["sts:AssumeRole"]
+        }]
+    },
+    Policies=[iam.Policy(
+        PolicyName="LambdaEC2DescribeInstancesPolicy",
+        PolicyDocument={
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                        "logs:PutLogEvents"
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:DescribeInstances"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }
+)]
+))
+
+with open("endpoint_address_lambda.py", "r") as l:
+    dns_lambda_function_code = l.read()
+
+endpoint_address_function = template.add_resource(awslambda.Function(
+    "DNSLambdaFunction",
+    Code=awslambda.Code(
+        ZipFile=dns_lambda_function_code,
+    ),
+    Handler="index.lambda_handler",
+    Role=GetAtt(endpoint_address_execution_role, "Arn"),
+    DependsOn=[ec2_instance],
+    Runtime="python3.8",
+    Timeout=10,
+))
+
+endpoint_address_lambda_invocation = template.add_resource(cloudformation.CustomResource(
+    "DNSLambdaInvocation",
+    ServiceToken=GetAtt(endpoint_address_function, "Arn"),
+    InstanceId=Ref(ec2_instance),
+))
+
+aaaa_record = template.add_resource(RecordSetType(
+    "AAAARecord",
+    HostedZoneId=Ref(hosted_zone_id_parameter),
+    Name="headscale.r6t.io",
+    Type="AAAA",
+    TTL="30",
+    ResourceRecords=[GetAtt(endpoint_address_lambda_invocation, "Ipv6Address")],
+))
+
 
 with open('cloudformation.yaml', 'w') as file:
     file.write(template.to_yaml())
