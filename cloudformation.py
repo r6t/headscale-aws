@@ -43,6 +43,7 @@ ipv6_lambda_execution_role = template.add_resource(iam.Role(
                     "logs:PutLogEvents",
                     "ec2:DescribeIpv6Pools",
                     "ec2:DescribeVpcs",
+                    "ssm:DeleteParameter",
                     "ssm:GetParameter",
                     "ssm:GetParameters",
                     "ssm:PutParameter"
@@ -53,74 +54,13 @@ ipv6_lambda_execution_role = template.add_resource(iam.Role(
     )]
 ))
 
-ipv6_lookup_function = template.add_resource(awslambda.Function(
-    "IPv6LookupLambdaFunction",
+with open("lambda.py", "r") as l:
+    lambda_function_code = l.read()
+
+ipv6_function = template.add_resource(awslambda.Function(
+    "IPv6LambdaFunction",
     Code=awslambda.Code(
-        ZipFile=("""
-import json
-import boto3
-import cfnresponse
-
-def lambda_handler(event, context):
-    ec2_client = boto3.client('ec2')
-    ssm_client = boto3.client('ssm')
-
-    # Initialize responseData
-    response_data = {}
-
-    try:
-        # Finding the VPC ID by VPC Name (assuming the name is unique)
-        vpcs_response = ec2_client.describe_vpcs(Filters=[{"Name": "tag:Name", "Values": ["headscale"]}])
-
-        if not vpcs_response["Vpcs"]:
-            raise ValueError("No VPC found with the name headscale")
-
-        vpc_id = vpcs_response["Vpcs"][0]["VpcId"]
-        ipv6_cidr_block = vpcs_response["Vpcs"][0]["Ipv6CidrBlockAssociationSet"][0]["Ipv6CidrBlock"]
-
-        # Store the IPv6 CIDR block in SSM
-        ssm_client.put_parameter(
-            Name="headscaleIPv6CidrBlock",
-            Value=ipv6_cidr_block,
-            Type="String",
-            Overwrite=True
-        )
-
-        response_data['IPv6CidrBlock'] = ipv6_cidr_block
-        cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data, physicalResourceId=vpc_id)
-
-    except Exception as e:
-        response_data['Message'] = str(e)
-        cfnresponse.send(event, context, cfnresponse.FAILED, response_data, reason=str(e))
-"""),
-    ),
-    Handler="index.lambda_handler",
-    Role=GetAtt(ipv6_lambda_execution_role, "Arn"),
-    Runtime="python3.8",
-    Timeout=10,
-))
-
-ssm_retrieval_function = template.add_resource(awslambda.Function(
-    "SSMRetrievalLambdaFunction",
-    Code=awslambda.Code(
-        ZipFile=("""
-import json
-import boto3
-import cfnresponse
-
-def lambda_handler(event, context):
-    ssm_client = boto3.client('ssm')
-    try:
-        parameter = ssm_client.get_parameter(Name="headscaleIPv6CidrBlock", WithDecryption=False)
-        ipv6_cidr_block = parameter['Parameter']['Value']
-        
-        responseData = {'Ipv6CidrBlock': ipv6_cidr_block}
-        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
-    
-    except Exception as e:
-        responseData = {'Message': str(e)}
-        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
-"""),
+        ZipFile=lambda_function_code,
     ),
     Handler="index.lambda_handler",
     Role=GetAtt(ipv6_lambda_execution_role, "Arn"),
@@ -155,7 +95,8 @@ vpcCidrBlock = template.add_resource(ec2.VPCCidrBlock(
 
 ipv6_custom_resource = template.add_resource(cloudformation.CustomResource(
     "TriggerLambdaCustomResource",
-    ServiceToken=GetAtt(ipv6_lookup_function, "Arn"),
+    DependsOn=[ipv6_cidr_ssm],
+    ServiceToken=GetAtt(ipv6_function, "Arn"),
 ))
 
 igw = template.add_resource(ec2.InternetGateway(
@@ -188,17 +129,11 @@ route = template.add_resource(ec2.Route(
     GatewayId=Ref(igw),
 ))
 
-ssm_retrieval_custom_resource = template.add_resource(cloudformation.CustomResource(
-    "SSMRetrievalLambdaCustomResource",
-    DependsOn=[ipv6_custom_resource],
-    ServiceToken=GetAtt(ssm_retrieval_function, "Arn"),
-))
-
 subnet = template.add_resource(ec2.Subnet(
     "HeadscalePublicSubnet",
     VpcId=Ref(vpc),
     CidrBlock="10.0.1.0/24",
-    Ipv6CidrBlock=GetAtt(ssm_retrieval_custom_resource, "Ipv6CidrBlock"),
+    Ipv6CidrBlock=GetAtt(ipv6_custom_resource, "Ipv6CidrBlock"),
     MapPublicIpOnLaunch=True,
     AvailabilityZone=Select(
         "0",
@@ -262,5 +197,5 @@ ec2_instance = template.add_resource(ec2.Instance(
     ]
 ))
 
-with open('cloudformation/headscale.yaml', 'w') as file:
+with open('cloudformation.yaml', 'w') as file:
     file.write(template.to_yaml())

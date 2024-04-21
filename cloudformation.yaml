@@ -47,7 +47,7 @@ Resources:
         - '0'
         - !GetAZs ''
       CidrBlock: 10.0.1.0/24
-      Ipv6CidrBlock: !GetAtt 'SSMRetrievalLambdaCustomResource.Ipv6CidrBlock'
+      Ipv6CidrBlock: !GetAtt 'TriggerLambdaCustomResource.Ipv6CidrBlock'
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -99,46 +99,17 @@ Resources:
       AmazonProvidedIpv6CidrBlock: true
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::VPCCidrBlock
-  IPv6LookupLambdaFunction:
+  IPv6LambdaFunction:
     Properties:
       Code:
-        ZipFile: |2
-
-          import json
-          import boto3
-          import cfnresponse
-
-          def lambda_handler(event, context):
-              ec2_client = boto3.client('ec2')
-              ssm_client = boto3.client('ssm')
-
-              # Initialize responseData
-              response_data = {}
-
-              try:
-                  # Finding the VPC ID by VPC Name (assuming the name is unique)
-                  vpcs_response = ec2_client.describe_vpcs(Filters=[{"Name": "tag:Name", "Values": ["headscale"]}])
-
-                  if not vpcs_response["Vpcs"]:
-                      raise ValueError("No VPC found with the name headscale")
-
-                  vpc_id = vpcs_response["Vpcs"][0]["VpcId"]
-                  ipv6_cidr_block = vpcs_response["Vpcs"][0]["Ipv6CidrBlockAssociationSet"][0]["Ipv6CidrBlock"]
-
-                  # Store the IPv6 CIDR block in SSM
-                  ssm_client.put_parameter(
-                      Name="headscaleIPv6CidrBlock",
-                      Value=ipv6_cidr_block,
-                      Type="String",
-                      Overwrite=True
-                  )
-
-                  response_data['IPv6CidrBlock'] = ipv6_cidr_block
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data, physicalResourceId=vpc_id)
-
-              except Exception as e:
-                  response_data['Message'] = str(e)
-                  cfnresponse.send(event, context, cfnresponse.FAILED, response_data, reason=str(e))
+        ZipFile: "import json\nimport boto3\nimport cfnresponse\n\ndef lambda_handler(event, context):\n    ec2_client = boto3.client('ec2')\n    ssm_client = boto3.client('ssm')\n    \n    try:\n     \
+          \   if event['RequestType'] in ['Create', 'Update']:\n            vpcs_response = ec2_client.describe_vpcs(Filters=[{\"Name\": \"tag:Name\", \"Values\": [\"headscale\"]}])\n\n            if not\
+          \ vpcs_response[\"Vpcs\"]:\n                raise ValueError(\"No VPC found with the name headscale\")\n\n            vpc_id = vpcs_response[\"Vpcs\"][0][\"VpcId\"]\n            ipv6_cidr_block\
+          \ = vpcs_response[\"Vpcs\"][0][\"Ipv6CidrBlockAssociationSet\"][0][\"Ipv6CidrBlock\"]\n            ssm_client.put_parameter(\n                    Name=\"headscaleIPv6CidrBlock\",\n           \
+          \         Value=ipv6_cidr_block,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n            \n            responseData = {'Ipv6CidrBlock': ipv6_cidr_block}\n\
+          \            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)\n        \n        elif event['RequestType'] == 'Delete':\n            ssm_client.delete_parameter(Name=\"headscaleIPv6CidrBlock\"\
+          )\n            cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, \"CustomResourcePhysicalID\")\n\n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event,\
+          \ context, cfnresponse.FAILED, responseData, \"CustomResourcePhysicalID\")"
       Handler: index.lambda_handler
       Role: !GetAtt 'LambdaExecutionRole.Arn'
       Runtime: python3.8
@@ -170,6 +141,7 @@ Resources:
                   - logs:PutLogEvents
                   - ec2:DescribeIpv6Pools
                   - ec2:DescribeVpcs
+                  - ssm:DeleteParameter
                   - ssm:GetParameter
                   - ssm:GetParameters
                   - ssm:PutParameter
@@ -184,24 +156,9 @@ Resources:
       GatewayId: !Ref 'HeadscaleInternetGateway'
       RouteTableId: !Ref 'HeadscaleRouteTable'
     Type: AWS::EC2::Route
-  SSMRetrievalLambdaCustomResource:
-    DependsOn:
-      - TriggerLambdaCustomResource
-    Properties:
-      ServiceToken: !GetAtt 'SSMRetrievalLambdaFunction.Arn'
-    Type: AWS::CloudFormation::CustomResource
-  SSMRetrievalLambdaFunction:
-    Properties:
-      Code:
-        ZipFile: "\nimport json\nimport boto3\nimport cfnresponse\n\ndef lambda_handler(event, context):\n    ssm_client = boto3.client('ssm')\n    try:\n        parameter = ssm_client.get_parameter(Name=\"\
-          headscaleIPv6CidrBlock\", WithDecryption=False)\n        ipv6_cidr_block = parameter['Parameter']['Value']\n        \n        responseData = {'Ipv6CidrBlock': ipv6_cidr_block}\n        cfnresponse.send(event,\
-          \ context, cfnresponse.SUCCESS, responseData)\n    \n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)\n"
-      Handler: index.lambda_handler
-      Role: !GetAtt 'LambdaExecutionRole.Arn'
-      Runtime: python3.8
-      Timeout: 10
-    Type: AWS::Lambda::Function
   TriggerLambdaCustomResource:
+    DependsOn:
+      - Ipv6CidrBlockSSMParameter
     Properties:
-      ServiceToken: !GetAtt 'IPv6LookupLambdaFunction.Arn'
+      ServiceToken: !GetAtt 'IPv6LambdaFunction.Arn'
     Type: AWS::CloudFormation::CustomResource
