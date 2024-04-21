@@ -6,7 +6,7 @@ Parameters:
     Description: SSH public key to be used with EC2 keypair
     Type: String
   SSHSource:
-    Description: IPv4 Address to allow ssh in from. e.g., x.x.x.x/32
+    Description: IPv6 CIDR to allow ssh in from
     Type: String
 Resources:
   EC2Instance:
@@ -19,8 +19,7 @@ Resources:
       InstanceType: t2.micro
       KeyName: !Ref 'EC2Keypair'
       NetworkInterfaces:
-        - AssociatePublicIpAddress: true
-          DeviceIndex: '0'
+        - DeviceIndex: '0'
           GroupSet:
             - !Ref 'HeadscaleSecurityGroup'
           SubnetId: !Ref 'HeadscalePublicSubnet'
@@ -43,6 +42,7 @@ Resources:
     Type: AWS::EC2::InternetGateway
   HeadscalePublicSubnet:
     Properties:
+      AssignIpv6AddressOnCreation: true
       AvailabilityZone: !Select
         - '0'
         - !GetAZs ''
@@ -65,7 +65,7 @@ Resources:
     Properties:
       GroupDescription: Headscale EC2 Security Group
       SecurityGroupIngress:
-        - CidrIp: !Ref 'SSHSource'
+        - CidrIpv6: !Ref 'SSHSource'
           FromPort: '22'
           IpProtocol: tcp
           ToPort: '22'

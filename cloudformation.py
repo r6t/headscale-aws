@@ -11,7 +11,7 @@ public_key_parameter = template.add_parameter(Parameter(
 
 ssh_source_parameter = template.add_parameter(Parameter(
     "SSHSource",
-    Description="IPv4 Address to allow ssh in from. e.g., x.x.x.x/32", # move to ipv6 once ipv6 support is there
+    Description="IPv6 CIDR to allow ssh in from",
     Type="String",
 ))
 
@@ -129,11 +129,19 @@ route = template.add_resource(ec2.Route(
     GatewayId=Ref(igw),
 ))
 
+ipv6_route = template.add_resource(ec2.Route(
+    "Ipv6Route",
+    RouteTableId=Ref(route_table),
+    DestinationIpv6CidrBlock="::/0",
+    GatewayId=Ref(igw),
+))
+
 subnet = template.add_resource(ec2.Subnet(
     "HeadscalePublicSubnet",
     VpcId=Ref(vpc),
     CidrBlock="10.0.1.0/24",
     Ipv6CidrBlock=GetAtt(ipv6_custom_resource, "Ipv6CidrBlock"),
+    AssignIpv6AddressOnCreation=True,
     MapPublicIpOnLaunch=True,
     AvailabilityZone=Select(
         "0",
@@ -160,7 +168,7 @@ security_group = template.add_resource(ec2.SecurityGroup(
             IpProtocol="tcp",
             FromPort="22",
             ToPort="22",
-            CidrIp=Ref(ssh_source_parameter),
+            CidrIpv6=Ref(ssh_source_parameter),
         ),
     ],
     Tags=[{"Key": "Name", "Value": "headscale"}],
@@ -175,7 +183,6 @@ ec2_keypair = template.add_resource(ec2.KeyPair(
 network_interface = ec2.NetworkInterfaceProperty(
     DeviceIndex=0,
     SubnetId=Ref(subnet),
-    AssociatePublicIpAddress=True,
     GroupSet=[Ref(security_group)]
 )
 
