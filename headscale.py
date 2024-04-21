@@ -21,7 +21,7 @@ hosted_zone_id_parameter = template.add_parameter(Parameter(
     Type="String",
 ))
 
-lambda_execution_role = template.add_resource(iam.Role(
+ipv6_lambda_execution_role = template.add_resource(iam.Role(
     "LambdaExecutionRole",
     AssumeRolePolicyDocument={
         "Version": "2012-10-17",
@@ -43,6 +43,8 @@ lambda_execution_role = template.add_resource(iam.Role(
                     "logs:PutLogEvents",
                     "ec2:DescribeIpv6Pools",
                     "ec2:DescribeVpcs",
+                    "ssm:GetParameter",
+                    "ssm:GetParameters",
                     "ssm:PutParameter"
                 ],
                 "Resource": "*"
@@ -93,7 +95,35 @@ def lambda_handler(event, context):
 """),
     ),
     Handler="index.lambda_handler",
-    Role=GetAtt(lambda_execution_role, "Arn"),
+    Role=GetAtt(ipv6_lambda_execution_role, "Arn"),
+    Runtime="python3.8",
+    Timeout=10,
+))
+
+ssm_retrieval_function = template.add_resource(awslambda.Function(
+    "SSMRetrievalLambdaFunction",
+    Code=awslambda.Code(
+        ZipFile=("""
+import json
+import boto3
+import cfnresponse
+
+def lambda_handler(event, context):
+    ssm_client = boto3.client('ssm')
+    try:
+        parameter = ssm_client.get_parameter(Name="headscaleIPv6CidrBlock", WithDecryption=False)
+        ipv6_cidr_block = parameter['Parameter']['Value']
+        
+        responseData = {'Ipv6CidrBlock': ipv6_cidr_block}
+        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+    
+    except Exception as e:
+        responseData = {'Message': str(e)}
+        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+"""),
+    ),
+    Handler="index.lambda_handler",
+    Role=GetAtt(ipv6_lambda_execution_role, "Arn"),
     Runtime="python3.8",
     Timeout=10,
 ))
@@ -123,7 +153,7 @@ vpcCidrBlock = template.add_resource(ec2.VPCCidrBlock(
     AmazonProvidedIpv6CidrBlock=True,
 ))
 
-custom_resource = template.add_resource(cloudformation.CustomResource(
+ipv6_custom_resource = template.add_resource(cloudformation.CustomResource(
     "TriggerLambdaCustomResource",
     ServiceToken=GetAtt(ipv6_lookup_function, "Arn"),
 ))
@@ -158,10 +188,17 @@ route = template.add_resource(ec2.Route(
     GatewayId=Ref(igw),
 ))
 
+ssm_retrieval_custom_resource = template.add_resource(cloudformation.CustomResource(
+    "SSMRetrievalLambdaCustomResource",
+    DependsOn=[ipv6_custom_resource],
+    ServiceToken=GetAtt(ssm_retrieval_function, "Arn"),
+))
+
 subnet = template.add_resource(ec2.Subnet(
     "HeadscalePublicSubnet",
     VpcId=Ref(vpc),
     CidrBlock="10.0.1.0/24",
+    Ipv6CidrBlock=GetAtt(ssm_retrieval_custom_resource, "Ipv6CidrBlock"),
     MapPublicIpOnLaunch=True,
     AvailabilityZone=Select(
         "0",

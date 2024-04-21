@@ -47,6 +47,7 @@ Resources:
         - '0'
         - !GetAZs ''
       CidrBlock: 10.0.1.0/24
+      Ipv6CidrBlock: !GetAtt 'SSMRetrievalLambdaCustomResource.Ipv6CidrBlock'
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -132,15 +133,11 @@ Resources:
                       Overwrite=True
                   )
 
-                  response_data['Message'] = f"Successfully updated SSM Parameter with IPv6 CIDR Block for VPC {vpc_id}"
-
-                  # Send success response
+                  response_data['IPv6CidrBlock'] = ipv6_cidr_block
                   cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data, physicalResourceId=vpc_id)
 
               except Exception as e:
-                  # Adding the exception message to 'Message' for consistency
                   response_data['Message'] = str(e)
-                  # Send failure response
                   cfnresponse.send(event, context, cfnresponse.FAILED, response_data, reason=str(e))
       Handler: index.lambda_handler
       Role: !GetAtt 'LambdaExecutionRole.Arn'
@@ -173,6 +170,8 @@ Resources:
                   - logs:PutLogEvents
                   - ec2:DescribeIpv6Pools
                   - ec2:DescribeVpcs
+                  - ssm:GetParameter
+                  - ssm:GetParameters
                   - ssm:PutParameter
                 Effect: Allow
                 Resource: '*'
@@ -185,6 +184,23 @@ Resources:
       GatewayId: !Ref 'HeadscaleInternetGateway'
       RouteTableId: !Ref 'HeadscaleRouteTable'
     Type: AWS::EC2::Route
+  SSMRetrievalLambdaCustomResource:
+    DependsOn:
+      - TriggerLambdaCustomResource
+    Properties:
+      ServiceToken: !GetAtt 'SSMRetrievalLambdaFunction.Arn'
+    Type: AWS::CloudFormation::CustomResource
+  SSMRetrievalLambdaFunction:
+    Properties:
+      Code:
+        ZipFile: "\nimport json\nimport boto3\nimport cfnresponse\n\ndef lambda_handler(event, context):\n    ssm_client = boto3.client('ssm')\n    try:\n        parameter = ssm_client.get_parameter(Name=\"\
+          headscaleIPv6CidrBlock\", WithDecryption=False)\n        ipv6_cidr_block = parameter['Parameter']['Value']\n        \n        responseData = {'Ipv6CidrBlock': ipv6_cidr_block}\n        cfnresponse.send(event,\
+          \ context, cfnresponse.SUCCESS, responseData)\n    \n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)\n"
+      Handler: index.lambda_handler
+      Role: !GetAtt 'LambdaExecutionRole.Arn'
+      Runtime: python3.8
+      Timeout: 10
+    Type: AWS::Lambda::Function
   TriggerLambdaCustomResource:
     Properties:
       ServiceToken: !GetAtt 'IPv6LookupLambdaFunction.Arn'
