@@ -306,6 +306,5 @@ aaaa_record = template.add_resource(RecordSetType(
     ResourceRecords=[GetAtt(endpoint_address_lambda_invocation, "Ipv6Address")],
 ))
 
-
 with open('cloudformation.yaml', 'w') as file:
     file.write(template.to_yaml())
