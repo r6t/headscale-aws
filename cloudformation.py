@@ -1,8 +1,9 @@
-from troposphere import Parameter, Ref, Template, Select, GetAZs, Tag, Output, Join, GetAtt
+from troposphere import Parameter, Ref, Template, Select, GetAZs, Tag, Output, Join, GetAtt, Base64
 from troposphere import awslambda, cloudformation, ec2, iam, ssm
 from troposphere.route53 import RecordSetType
 
 template = Template()
+template.set_description("IPv6-centric EC2 + infrastructure for Headscale")
 
 public_key_parameter = template.add_parameter(Parameter(
     "PublicKeyParameter",
@@ -143,7 +144,7 @@ subnet = template.add_resource(ec2.Subnet(
     CidrBlock="10.0.1.0/24",
     Ipv6CidrBlock=GetAtt(ipv6_custom_resource, "Ipv6CidrBlock"),
     AssignIpv6AddressOnCreation=True,
-    MapPublicIpOnLaunch=False,
+    MapPublicIpOnLaunch=True,
     AvailabilityZone=Select(
         "0",
         GetAZs("")
@@ -184,6 +185,7 @@ ec2_keypair = template.add_resource(ec2.KeyPair(
 network_interface = ec2.NetworkInterfaceProperty(
     DeviceIndex=0,
     SubnetId=Ref(subnet),
+    AssociatePublicIpAddress=True,
     GroupSet=[Ref(security_group)]
 )
 
@@ -200,6 +202,12 @@ ec2_instance = template.add_resource(ec2.Instance(
         "0",
         GetAZs("")
     ),
+    UserData=Base64(Join('', [
+        "#!/bin/bash\n",
+        "apt update && apt upgrade -y\n",
+        "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha8/headscale_0.23.0-alpha8_linux_amd64.deb\n",
+        "apt install ./headscale.deb -y\n"
+    ])),
     Tags=[
         Tag("Name", "headscale")
     ]

@@ -1,3 +1,4 @@
+Description: IPv6-centric EC2 + infrastructure for Headscale
 Parameters:
   HostedZoneId:
     Description: Hosted Zone ID to use for the Headscale endpoint.
@@ -76,7 +77,8 @@ Resources:
       InstanceType: t2.micro
       KeyName: !Ref 'EC2Keypair'
       NetworkInterfaces:
-        - DeviceIndex: '0'
+        - AssociatePublicIpAddress: true
+          DeviceIndex: '0'
           GroupSet:
             - !Ref 'HeadscaleSecurityGroup'
           SubnetId: !Ref 'HeadscalePublicSubnet'
@@ -85,6 +87,13 @@ Resources:
         - Key: Name
           Value: headscale
       Tenancy: default
+      UserData: !Base64
+        Fn::Join:
+          - ''
+          - - "#!/bin/bash\n"
+            - "apt update && apt upgrade -y\n"
+            - "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha8/headscale_0.23.0-alpha8_linux_amd64.deb\n"
+            - "apt install ./headscale.deb -y\n"
     Type: AWS::EC2::Instance
   EC2Keypair:
     Properties:
@@ -105,7 +114,7 @@ Resources:
         - !GetAZs ''
       CidrBlock: 10.0.1.0/24
       Ipv6CidrBlock: !GetAtt 'TriggerLambdaCustomResource.Ipv6CidrBlock'
-      MapPublicIpOnLaunch: false
+      MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: headscale-public
