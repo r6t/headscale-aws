@@ -210,7 +210,9 @@ ec2_instance = template.add_resource(ec2.Instance(
     ),
     UserData=Base64(Join('', [
         "#!/bin/bash\n",
-        "apt update && apt upgrade -y && apt install neovim\n",
+        "apt update\n",
+        "apt install neovim -y\n",
+        "apt upgrade -y\n",
         "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha8/headscale_0.23.0-alpha8_linux_amd64.deb\n",
         "apt install ./headscale.deb -y\n",
         "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://headscale\\.r6t\\.io:443#' /etc/headscale/config.yaml\n",
