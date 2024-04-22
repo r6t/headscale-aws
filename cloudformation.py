@@ -3,7 +3,7 @@ from troposphere import awslambda, cloudformation, ec2, iam, ssm
 from troposphere.route53 import RecordSetType
 
 template = Template()
-template.set_description("IPv6-centric EC2 + infrastructure for Headscale")
+template.set_description("Headscale IPv6-centric EC2, VPC")
 
 public_key_parameter = template.add_parameter(Parameter(
     "PublicKeyParameter",
@@ -204,9 +204,14 @@ ec2_instance = template.add_resource(ec2.Instance(
     ),
     UserData=Base64(Join('', [
         "#!/bin/bash\n",
-        "apt update && apt upgrade -y\n",
+        "apt update && apt upgrade -y && apt install neovim\n",
         "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha8/headscale_0.23.0-alpha8_linux_amd64.deb\n",
-        "apt install ./headscale.deb -y\n"
+        "apt install ./headscale.deb -y\n",
+        "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://headscale\\.r6t\\.io:8443#' /etc/headscale/config.yaml\n",
+        "sed -i 's#listen_addr: 127\\.0\\.0\\.1:8080#listen_addr: 0\\.0\\.0\\.0:8443#' /etc/headscale/config.yaml\n",
+        "sed -i '/acme_email:/d' config.yaml && sed -i '/^tls_letsencrypt_hostname:/a\\acme_email: headscale@r6t.io' /etc/headscale/config.yaml\n",
+        "sed -i '/tls_letsencrypt_hostname:/d' config.yaml && sed -i '/^# Type of ACME challenge/a\\tls_letsencrypt_hostname: headscale.r6t.io' /etc/headscale/config.yaml\n",
+        "sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - 2001:1608:10:25::1c04:b12f#' /etc/headscale/config.yaml\n",
     ])),
     Tags=[
         Tag("Name", "headscale")
