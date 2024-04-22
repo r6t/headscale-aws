@@ -1,19 +1,30 @@
 Description: Headscale IPv6-centric EC2, VPC
 Parameters:
+  HostedZoneDomain:
+    Description: Hosted Zone domain name for Headscale configuration.
+    Type: String
   HostedZoneId:
-    Description: Hosted Zone ID to use for the Headscale endpoint.
+    Description: Hosted Zone ID for the Headscale endpoint record.
     Type: String
   PublicKeyParameter:
-    Description: SSH public key to be used with EC2 keypair
+    Description: SSH public key for EC2 keypair
     Type: String
   SSHSource:
-    Description: IPv6 CIDR to allow ssh in from
+    Description: IPv6 CIDR to allow ssh into EC2 from
+    Type: String
+  StackNameParameter:
+    Default: headscale
+    Description: Base name for resources. Meant to be headscale, changing can be useful for multiple stacks
     Type: String
 Resources:
   AAAARecord:
     Properties:
       HostedZoneId: !Ref 'HostedZoneId'
-      Name: headscale.r6t.io
+      Name: !Join
+        - ''
+        - - !Ref 'StackNameParameter'
+          - .
+          - !Ref 'HostedZoneDomain'
       ResourceRecords:
         - !GetAtt 'DNSLambdaInvocation.Ipv6Address'
       TTL: '30'
@@ -94,7 +105,7 @@ Resources:
             - "apt update\n"
             - "apt install neovim -y\n"
             - "apt upgrade -y\n"
-            - "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha8/headscale_0.23.0-alpha8_linux_amd64.deb\n"
+            - "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha9/headscale_0.23.0-alpha9_linux_amd64.deb\n"
             - "apt install ./headscale.deb -y\n"
             - "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://headscale\\.r6t\\.io:443#' /etc/headscale/config.yaml\n"
             - "sed -i 's#listen_addr: 127\\.0\\.0\\.1:8080#listen_addr: 0\\.0\\.0\\.0:443#' /etc/headscale/config.yaml\n"
