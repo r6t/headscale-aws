@@ -5,21 +5,34 @@ from troposphere.route53 import RecordSetType
 template = Template()
 template.set_description("Headscale IPv6-centric EC2, VPC")
 
+stack_name_parameter = template.add_parameter(Parameter(
+    "StackNameParameter",
+    Description="Base name for resources. Meant to be headscale, changing can be useful for multiple stacks",
+    Type="String",
+    Default="headscale",
+))
+
 public_key_parameter = template.add_parameter(Parameter(
     "PublicKeyParameter",
-    Description="SSH public key to be used with EC2 keypair",
+    Description="SSH public key for EC2 keypair",
     Type="String",
 ))
 
 ssh_source_parameter = template.add_parameter(Parameter(
     "SSHSource",
-    Description="IPv6 CIDR to allow ssh in from",
+    Description="IPv6 CIDR to allow ssh into EC2 from",
+    Type="String",
+))
+
+hosted_zone_domain_parameter = template.add_parameter(Parameter(
+    "HostedZoneDomain",
+    Description="Hosted Zone domain name for Headscale configuration.",
     Type="String",
 ))
 
 hosted_zone_id_parameter = template.add_parameter(Parameter(
     "HostedZoneId",
-    Description="Hosted Zone ID to use for the Headscale endpoint.",
+    Description="Hosted Zone ID for the Headscale endpoint record.",
     Type="String",
 ))
 
@@ -287,7 +300,7 @@ endpoint_address_lambda_invocation = template.add_resource(cloudformation.Custom
 aaaa_record = template.add_resource(RecordSetType(
     "AAAARecord",
     HostedZoneId=Ref(hosted_zone_id_parameter),
-    Name="headscale.r6t.io",
+    Name=Join("", [Ref(stack_name_parameter), ".", Ref(hosted_zone_domain_parameter)]),
     Type="AAAA",
     TTL="30",
     ResourceRecords=[GetAtt(endpoint_address_lambda_invocation, "Ipv6Address")],
