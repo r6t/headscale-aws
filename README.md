@@ -26,6 +26,8 @@ This project provides an AWS CloudFormation template that deploys Headscale on a
 
 ## Deployment
 
+! This is under active development. You will currently need to update values in UserData before this will work for you. Headscale data is not currently retained when the EC2 instance is terminated !
+
 Example AWS CLI command to deploy stack. Modify parameter values:
 ```aws cloudformation create-stack --stack-name headscale --template-body file://cloudformation.yaml --capabilities CAPABILITY_NAMED_IAM --parameters ParameterKey=PublicKeyParameter,ParameterValue="ssh-ed25519 SSH-PUBLIC-KEY user@computer" ParameterKey=SSHSource,ParameterValue="0000:111:0000:3:0000:0000:0000:0000/64" ParameterKey=HostedZoneId,ParameterValue=XXXXXXXXXXXXXXXXXXXX ParameterKey=HostedZoneDomain,ParameterValue=mycooldomain.com```
 

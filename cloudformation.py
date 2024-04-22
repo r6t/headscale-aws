@@ -233,7 +233,10 @@ ec2_instance = template.add_resource(ec2.Instance(
         "sed -i '/acme_email:/s/.*/acme_email: \"headscale@r6t.io\"/' /etc/headscale/config.yaml\n",
         "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"headscale.r6t.io\"/' /etc/headscale/config.yaml\n"
         "sed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type: TLS-ALPN-01#' /etc/headscale/config.yaml\n",
+        "sed -i 's#base_domain: #base_domain: magic.r6t.io#' /etc/headscale/config.yaml\n",
         "sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - 2001:1608:10:25::1c04:b12f#' /etc/headscale/config.yaml\n",
+        "systemctl enable headscale\n",
+        "reboot\n",
     ])),
     Tags=[
         Tag("Name", "headscale")
