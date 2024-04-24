@@ -12,18 +12,6 @@ stack_name_parameter = template.add_parameter(Parameter(
     Default="headscale",
 ))
 
-public_key_parameter = template.add_parameter(Parameter(
-    "PublicKeyParameter",
-    Description="SSH public key for EC2 keypair",
-    Type="String",
-))
-
-ssh_source_parameter = template.add_parameter(Parameter(
-    "SSHSource",
-    Description="IPv6 CIDR to allow ssh into EC2 from",
-    Type="String",
-))
-
 hosted_zone_domain_parameter = template.add_parameter(Parameter(
     "HostedZoneDomain",
     Description="Hosted Zone domain name for Headscale configuration.",
@@ -202,12 +190,6 @@ security_group = template.add_resource(ec2.SecurityGroup(
     SecurityGroupIngress=[
         ec2.SecurityGroupRule(
             IpProtocol="tcp",
-            FromPort="22",
-            ToPort="22",
-            CidrIpv6=Ref(ssh_source_parameter),
-        ),
-        ec2.SecurityGroupRule(
-            IpProtocol="tcp",
             FromPort=443,
             ToPort=443,
             CidrIpv6="::/0",
@@ -216,11 +198,6 @@ security_group = template.add_resource(ec2.SecurityGroup(
     Tags=[{"Key": "Name", "Value": "headscale"}],
 ))
 
-ec2_keypair = template.add_resource(ec2.KeyPair(
-    "EC2Keypair",
-    KeyName="HeadscaleSSHPublicKey",
-    PublicKeyMaterial=Ref(public_key_parameter)
-))
 
 network_interface = ec2.NetworkInterfaceProperty(
     DeviceIndex=0,
@@ -234,7 +211,6 @@ ec2_instance = template.add_resource(ec2.Instance(
     ImageId="ami-08116b9957a259459",
     InstanceType="t2.micro",
     IamInstanceProfile=Ref(instance_profile),
-    KeyName=Ref(ec2_keypair),
     Tenancy="default",
     NetworkInterfaces=[network_interface],
     EbsOptimized=False,

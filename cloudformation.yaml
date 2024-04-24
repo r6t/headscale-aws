@@ -6,12 +6,6 @@ Parameters:
   HostedZoneId:
     Description: Hosted Zone ID for the Headscale endpoint record.
     Type: String
-  PublicKeyParameter:
-    Description: SSH public key for EC2 keypair
-    Type: String
-  SSHSource:
-    Description: IPv6 CIDR to allow ssh into EC2 from
-    Type: String
   StackNameParameter:
     Default: headscale
     Description: Base name for resources. Meant to be headscale, changing can be useful for multiple stacks
@@ -87,7 +81,6 @@ Resources:
       IamInstanceProfile: !Ref 'InstanceProfile'
       ImageId: ami-08116b9957a259459
       InstanceType: t2.micro
-      KeyName: !Ref 'EC2Keypair'
       NetworkInterfaces:
         - AssociatePublicIpAddress: true
           DeviceIndex: '0'
@@ -118,11 +111,6 @@ Resources:
             - "systemctl enable headscale\n"
             - "reboot\n"
     Type: AWS::EC2::Instance
-  EC2Keypair:
-    Properties:
-      KeyName: HeadscaleSSHPublicKey
-      PublicKeyMaterial: !Ref 'PublicKeyParameter'
-    Type: AWS::EC2::KeyPair
   HeadscaleInternetGateway:
     Properties:
       Tags:
@@ -154,10 +142,6 @@ Resources:
     Properties:
       GroupDescription: Headscale EC2 Security Group
       SecurityGroupIngress:
-        - CidrIpv6: !Ref 'SSHSource'
-          FromPort: '22'
-          IpProtocol: tcp
-          ToPort: '22'
         - CidrIpv6: ::/0
           FromPort: 443
           IpProtocol: tcp
