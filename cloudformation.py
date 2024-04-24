@@ -3,19 +3,13 @@ from troposphere import awslambda, cloudformation, ec2, iam, ssm
 from troposphere.route53 import RecordSetType
 
 template = Template()
-template.set_description("Headscale IPv6-centric EC2, VPC")
+template.set_description("Headscale IPv6-centric EC2 stack")
 
 stack_name_parameter = template.add_parameter(Parameter(
-    "StackNameParameter",
+    "StackName",
     Description="Base name for resources. Meant to be headscale, changing can be useful for multiple stacks",
     Type="String",
     Default="headscale",
-))
-
-hosted_zone_domain_parameter = template.add_parameter(Parameter(
-    "HostedZoneDomain",
-    Description="Hosted Zone domain name for Headscale configuration.",
-    Type="String",
 ))
 
 hosted_zone_id_parameter = template.add_parameter(Parameter(
@@ -24,8 +18,21 @@ hosted_zone_id_parameter = template.add_parameter(Parameter(
     Type="String",
 ))
 
-ipv6_lambda_execution_role = template.add_resource(iam.Role(
-    "LambdaExecutionRole",
+nextdns_id_parameter = template.add_parameter(Parameter(
+    "NextDnsId",
+    Description="NextDNS account to be used with Headscale",
+    Type="String",
+))
+
+ipv6_cidr_ssm = template.add_resource(ssm.Parameter(
+    "Ipv6CidrBlockSSMParameter",
+    Name="headscaleIPv6CidrBlock",
+    Type="String",
+    Value="The SSM parameter containing the Headscale VPC IPv6 CIDR block has not been set.",
+))
+
+ssm_lambda_execution_role = template.add_resource(iam.Role(
+    "SSMLambdaExecutionRole",
     AssumeRolePolicyDocument={
         "Version": "2012-10-17",
         "Statement": [{
@@ -57,26 +64,26 @@ ipv6_lambda_execution_role = template.add_resource(iam.Role(
     )]
 ))
 
-with open("ipv6_cidr_lambda.py", "r") as l:
-    lambda_function_code = l.read()
+with open("lambda_ssm.py", "r") as l:
+    ssm_lambda_function_code = l.read()
 
-ipv6_function = template.add_resource(awslambda.Function(
-    "IPv6LambdaFunction",
+ssm_function = template.add_resource(awslambda.Function(
+    "SSMLambdaFunction",
     Code=awslambda.Code(
-        ZipFile=lambda_function_code,
+        ZipFile=ssm_lambda_function_code,
     ),
     Handler="index.lambda_handler",
-    Role=GetAtt(ipv6_lambda_execution_role, "Arn"),
+    Role=GetAtt(ssm_lambda_execution_role, "Arn"),
     Runtime="python3.8",
     Timeout=10,
 ))
 
-ipv6_cidr_ssm = template.add_resource(ssm.Parameter(
-    "Ipv6CidrBlockSSMParameter",
-    Name="headscaleIPv6CidrBlock",
-    Type="String",
-    Value="The SSM parameter containing the Headscale VPC IPv6 CIDR block has not been set.",
+ssm_lambda_invocation = template.add_resource(cloudformation.CustomResource(
+    "TriggerLambdaCustomResource",
+    DependsOn=[ipv6_cidr_ssm],
+    ServiceToken=GetAtt(ssm_function, "Arn"),
 ))
+
 
 vpc = template.add_resource(ec2.VPC(
     "HeadscaleVpc",
@@ -94,12 +101,6 @@ vpcCidrBlock = template.add_resource(ec2.VPCCidrBlock(
     "Headscaleipv6CidrBlock",
     VpcId=Ref(vpc),
     AmazonProvidedIpv6CidrBlock=True,
-))
-
-ipv6_custom_resource = template.add_resource(cloudformation.CustomResource(
-    "TriggerLambdaCustomResource",
-    DependsOn=[ipv6_cidr_ssm],
-    ServiceToken=GetAtt(ipv6_function, "Arn"),
 ))
 
 igw = template.add_resource(ec2.InternetGateway(
@@ -143,7 +144,7 @@ subnet = template.add_resource(ec2.Subnet(
     "HeadscalePublicSubnet",
     VpcId=Ref(vpc),
     CidrBlock="10.0.1.0/24",
-    Ipv6CidrBlock=GetAtt(ipv6_custom_resource, "Ipv6CidrBlock"),
+    Ipv6CidrBlock=GetAtt(ssm_lambda_invocation, "Ipv6CidrBlock"),
     AssignIpv6AddressOnCreation=True,
     MapPublicIpOnLaunch=True,
     AvailabilityZone=Select(
@@ -226,13 +227,14 @@ ec2_instance = template.add_resource(ec2.Instance(
         "apt upgrade -y\n",
         "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha9/headscale_0.23.0-alpha9_linux_amd64.deb\n",
         "apt install ./headscale.deb -y\n",
-        "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://headscale\\.r6t\\.io:443#' /etc/headscale/config.yaml\n",
+        f"SERVER_URL=$(aws ssm get-parameter --name 'your_ssm_parameter_for_domain' --query 'Parameter.Value' --output text)\n",
+        "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://${SERVER_URL}#' /etc/headscale/config.yaml\n",
         "sed -i 's#listen_addr: 127\\.0\\.0\\.1:8080#listen_addr: 0\\.0\\.0\\.0:443#' /etc/headscale/config.yaml\n",
-        "sed -i '/acme_email:/s/.*/acme_email: \"headscale@r6t.io\"/' /etc/headscale/config.yaml\n",
-        "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"headscale.r6t.io\"/' /etc/headscale/config.yaml\n"
+        "sed -i '/acme_email:/s/.*/acme_email: \"headscale@${SERVER_URL}\"/' /etc/headscale/config.yaml\n",
+        "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"${SERVER_URL}\"/' /etc/headscale/config.yaml\n"
         "sed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type: TLS-ALPN-01#' /etc/headscale/config.yaml\n",
-        "sed -i 's#base_domain: example.com#base_domain: magic.r6t.io#' /etc/headscale/config.yaml\n",
-        "sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - 2001:1608:10:25::1c04:b12f#' /etc/headscale/config.yaml\n",
+        "sed -i 's#base_domain: example.com#base_domain: ${SERVER_URL}#' /etc/headscale/config.yaml\n",
+        f"sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - https://dns.nextdns.io/{Ref(nextdns_id_parameter)}#' /etc/headscale/config.yaml\n",
         "systemctl enable headscale\n",
         "reboot\n",
     ])),
@@ -241,7 +243,7 @@ ec2_instance = template.add_resource(ec2.Instance(
     ]
 ))
 
-endpoint_address_execution_role = template.add_resource(iam.Role(
+dns_execution_role = template.add_resource(iam.Role(
     "DNSLambdaExecutionRole",
     AssumeRolePolicyDocument={
         "Version": "2012-10-17",
@@ -268,7 +270,9 @@ endpoint_address_execution_role = template.add_resource(iam.Role(
                 {
                     "Effect": "Allow",
                     "Action": [
-                        "ec2:DescribeInstances"
+                        "ec2:DescribeInstances",
+                        "route53:ListHostedZones",
+                        "route53:GetHostedZone"
                     ],
                     "Resource": "*"
                 }
@@ -277,34 +281,34 @@ endpoint_address_execution_role = template.add_resource(iam.Role(
 )]
 ))
 
-with open("endpoint_address_lambda.py", "r") as l:
+with open("lambda_dns.py", "r") as l:
     dns_lambda_function_code = l.read()
 
-endpoint_address_function = template.add_resource(awslambda.Function(
+dns_function = template.add_resource(awslambda.Function(
     "DNSLambdaFunction",
     Code=awslambda.Code(
         ZipFile=dns_lambda_function_code,
     ),
     Handler="index.lambda_handler",
-    Role=GetAtt(endpoint_address_execution_role, "Arn"),
+    Role=GetAtt(dns_execution_role, "Arn"),
     DependsOn=[ec2_instance],
     Runtime="python3.8",
     Timeout=10,
 ))
 
-endpoint_address_lambda_invocation = template.add_resource(cloudformation.CustomResource(
+dns_lambda_invocation = template.add_resource(cloudformation.CustomResource(
     "DNSLambdaInvocation",
-    ServiceToken=GetAtt(endpoint_address_function, "Arn"),
+    ServiceToken=GetAtt(dns_function, "Arn"),
     InstanceId=Ref(ec2_instance),
 ))
 
 aaaa_record = template.add_resource(RecordSetType(
     "AAAARecord",
     HostedZoneId=Ref(hosted_zone_id_parameter),
-    Name=Join("", [Ref(stack_name_parameter), ".", Ref(hosted_zone_domain_parameter)]),
+    Name=Join("", [Ref(stack_name_parameter), ".", GetAtt(ssm_lambda_invocation, "DomainName")]),
     Type="AAAA",
     TTL="30",
-    ResourceRecords=[GetAtt(endpoint_address_lambda_invocation, "Ipv6Address")],
+    ResourceRecords=[GetAtt(dns_lambda_invocation, "Ipv6Address")],
 ))
 
 with open('cloudformation.yaml', 'w') as file:

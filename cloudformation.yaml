@@ -1,12 +1,12 @@
-Description: Headscale IPv6-centric EC2, VPC
+Description: Headscale IPv6-centric EC2 stack
 Parameters:
-  HostedZoneDomain:
-    Description: Hosted Zone domain name for Headscale configuration.
-    Type: String
   HostedZoneId:
     Description: Hosted Zone ID for the Headscale endpoint record.
     Type: String
-  StackNameParameter:
+  NextDnsId:
+    Description: NextDNS account to be used with Headscale
+    Type: String
+  StackName:
     Default: headscale
     Description: Base name for resources. Meant to be headscale, changing can be useful for multiple stacks
     Type: String
@@ -16,9 +16,9 @@ Resources:
       HostedZoneId: !Ref 'HostedZoneId'
       Name: !Join
         - ''
-        - - !Ref 'StackNameParameter'
+        - - !Ref 'StackName'
           - .
-          - !Ref 'HostedZoneDomain'
+          - !GetAtt 'TriggerLambdaCustomResource.DomainName'
       ResourceRecords:
         - !GetAtt 'DNSLambdaInvocation.Ipv6Address'
       TTL: '30'
@@ -46,6 +46,8 @@ Resources:
                 Resource: arn:aws:logs:*:*:*
               - Action:
                   - ec2:DescribeInstances
+                  - route53:ListHostedZones
+                  - route53:GetHostedZone
                 Effect: Allow
                 Resource: '*'
             Version: '2012-10-17'
@@ -101,13 +103,14 @@ Resources:
             - "apt upgrade -y\n"
             - "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha9/headscale_0.23.0-alpha9_linux_amd64.deb\n"
             - "apt install ./headscale.deb -y\n"
-            - "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://headscale\\.r6t\\.io:443#' /etc/headscale/config.yaml\n"
+            - "SERVER_URL=$(aws ssm get-parameter --name 'your_ssm_parameter_for_domain' --query 'Parameter.Value' --output text)\n"
+            - "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://${SERVER_URL}#' /etc/headscale/config.yaml\n"
             - "sed -i 's#listen_addr: 127\\.0\\.0\\.1:8080#listen_addr: 0\\.0\\.0\\.0:443#' /etc/headscale/config.yaml\n"
-            - "sed -i '/acme_email:/s/.*/acme_email: \"headscale@r6t.io\"/' /etc/headscale/config.yaml\n"
-            - "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"headscale.r6t.io\"/' /etc/headscale/config.yaml\nsed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type:\
+            - "sed -i '/acme_email:/s/.*/acme_email: \"headscale@${SERVER_URL}\"/' /etc/headscale/config.yaml\n"
+            - "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"${SERVER_URL}\"/' /etc/headscale/config.yaml\nsed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type:\
               \ TLS-ALPN-01#' /etc/headscale/config.yaml\n"
-            - "sed -i 's#base_domain: example.com#base_domain: magic.r6t.io#' /etc/headscale/config.yaml\n"
-            - "sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - 2001:1608:10:25::1c04:b12f#' /etc/headscale/config.yaml\n"
+            - "sed -i 's#base_domain: example.com#base_domain: ${SERVER_URL}#' /etc/headscale/config.yaml\n"
+            - "sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - https://dns.nextdns.io/<troposphere.Ref object at 0x7f9c89edf010>#' /etc/headscale/config.yaml\n"
             - "systemctl enable headscale\n"
             - "reboot\n"
     Type: AWS::EC2::Instance
@@ -176,22 +179,6 @@ Resources:
       AmazonProvidedIpv6CidrBlock: true
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::VPCCidrBlock
-  IPv6LambdaFunction:
-    Properties:
-      Code:
-        ZipFile: "import json\nimport boto3\nimport cfnresponse\n\ndef lambda_handler(event, context):\n    ec2_client = boto3.client('ec2')\n    ssm_client = boto3.client('ssm')\n    \n    try:\n     \
-          \   if event['RequestType'] in ['Create', 'Update']:\n            vpcs_response = ec2_client.describe_vpcs(Filters=[{\"Name\": \"tag:Name\", \"Values\": [\"headscale\"]}])\n\n            if not\
-          \ vpcs_response[\"Vpcs\"]:\n                raise ValueError(\"No VPC found with the name headscale\")\n\n            vpc_id = vpcs_response[\"Vpcs\"][0][\"VpcId\"]\n            ipv6_cidr_block\
-          \ = vpcs_response[\"Vpcs\"][0][\"Ipv6CidrBlockAssociationSet\"][0][\"Ipv6CidrBlock\"]\n            ssm_client.put_parameter(\n                    Name=\"headscaleIPv6CidrBlock\",\n           \
-          \         Value=ipv6_cidr_block,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n            \n            responseData = {'Ipv6CidrBlock': ipv6_cidr_block}\n\
-          \            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)\n        \n        elif event['RequestType'] == 'Delete':\n            ssm_client.delete_parameter(Name=\"headscaleIPv6CidrBlock\"\
-          )\n            cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, \"CustomResourcePhysicalID\")\n\n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event,\
-          \ context, cfnresponse.FAILED, responseData, \"CustomResourcePhysicalID\")"
-      Handler: index.lambda_handler
-      Role: !GetAtt 'LambdaExecutionRole.Arn'
-      Runtime: python3.8
-      Timeout: 10
-    Type: AWS::Lambda::Function
   InstanceProfile:
     Properties:
       Roles:
@@ -209,7 +196,13 @@ Resources:
       GatewayId: !Ref 'HeadscaleInternetGateway'
       RouteTableId: !Ref 'HeadscaleRouteTable'
     Type: AWS::EC2::Route
-  LambdaExecutionRole:
+  Route:
+    Properties:
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'HeadscaleInternetGateway'
+      RouteTableId: !Ref 'HeadscaleRouteTable'
+    Type: AWS::EC2::Route
+  SSMLambdaExecutionRole:
     Properties:
       AssumeRolePolicyDocument:
         Statement:
@@ -238,12 +231,25 @@ Resources:
             Version: '2012-10-17'
           PolicyName: root
     Type: AWS::IAM::Role
-  Route:
+  SSMLambdaFunction:
     Properties:
-      DestinationCidrBlock: '0.0.0.0/0'
-      GatewayId: !Ref 'HeadscaleInternetGateway'
-      RouteTableId: !Ref 'HeadscaleRouteTable'
-    Type: AWS::EC2::Route
+      Code:
+        ZipFile: "import boto3\nimport cfnresponse\n\ndef lambda_handler(event, context):\n    ec2_client = boto3.client('ec2')\n    route53_client = boto3.client('route53')\n    ssm_client = boto3.client('ssm')\n\
+          \    \n    try:\n        if event['RequestType'] in ['Create', 'Update']:\n            vpcs_response = ec2_client.describe_vpcs(Filters=[{\"Name\": \"tag:Name\", \"Values\": [\"headscale\"]}])\n\
+          \            if not vpcs_response[\"Vpcs\"]:\n                raise ValueError(\"No VPC found with the name headscale\")\n\n            vpc_id = vpcs_response[\"Vpcs\"][0][\"VpcId\"]\n       \
+          \     ipv6_cidr_block = vpcs_response[\"Vpcs\"][0][\"Ipv6CidrBlockAssociationSet\"][0][\"Ipv6CidrBlock\"]\n            ssm_client.put_parameter(\n                    Name=\"/config/headscale/ipv6CidrBlock\"\
+          ,\n                    Value=ipv6_cidr_block,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n\n            hosted_zone_id = event['ResourceProperties']['HostedZoneId']\n\
+          \            hosted_zone = route53_client.get_hosted_zone(Id=hosted_zone_id)\n            domain_name = hosted_zone['HostedZone']['Name'].rstrip('.')\n            ssm_client.put_parameter(\n \
+          \                   Name=\"/config/headscale/domainName\",\n                    Value=domain_name,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n\
+          \n            responseData = {'Ipv6CidrBlock': ipv6_cidr_block, 'DomainName': domain_name}\n            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)\n        \n        elif\
+          \ event['RequestType'] == 'Delete':\n            ssm_client.delete_parameter(Name=\"/config/headscale/ipv6CidrBlock\")\n            ssm_client.delete_parameter(Name=\"/config/headscale/domainName\"\
+          )\n            cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, \"CustomResourcePhysicalID\")\n\n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event,\
+          \ context, cfnresponse.FAILED, responseData, \"CustomResourcePhysicalID\")\n"
+      Handler: index.lambda_handler
+      Role: !GetAtt 'SSMLambdaExecutionRole.Arn'
+      Runtime: python3.8
+      Timeout: 10
+    Type: AWS::Lambda::Function
   SSMRoleForEC2:
     Properties:
       AssumeRolePolicyDocument:
@@ -263,5 +269,5 @@ Resources:
     DependsOn:
       - Ipv6CidrBlockSSMParameter
     Properties:
-      ServiceToken: !GetAtt 'IPv6LambdaFunction.Arn'
+      ServiceToken: !GetAtt 'SSMLambdaFunction.Arn'
     Type: AWS::CloudFormation::CustomResource
