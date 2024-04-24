@@ -84,6 +84,7 @@ Resources:
         - '0'
         - !GetAZs ''
       EbsOptimized: false
+      IamInstanceProfile: !Ref 'InstanceProfile'
       ImageId: ami-08116b9957a259459
       InstanceType: t2.micro
       KeyName: !Ref 'EC2Keypair'
@@ -112,7 +113,7 @@ Resources:
             - "sed -i '/acme_email:/s/.*/acme_email: \"headscale@r6t.io\"/' /etc/headscale/config.yaml\n"
             - "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"headscale.r6t.io\"/' /etc/headscale/config.yaml\nsed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type:\
               \ TLS-ALPN-01#' /etc/headscale/config.yaml\n"
-            - "sed -i 's#base_domain: #base_domain: magic.r6t.io#' /etc/headscale/config.yaml\n"
+            - "sed -i 's#base_domain: example.com#base_domain: magic.r6t.io#' /etc/headscale/config.yaml\n"
             - "sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - 2001:1608:10:25::1c04:b12f#' /etc/headscale/config.yaml\n"
             - "systemctl enable headscale\n"
             - "reboot\n"
@@ -207,6 +208,11 @@ Resources:
       Runtime: python3.8
       Timeout: 10
     Type: AWS::Lambda::Function
+  InstanceProfile:
+    Properties:
+      Roles:
+        - !Ref 'SSMRoleForEC2'
+    Type: AWS::IAM::InstanceProfile
   Ipv6CidrBlockSSMParameter:
     Properties:
       Name: headscaleIPv6CidrBlock
@@ -254,6 +260,21 @@ Resources:
       GatewayId: !Ref 'HeadscaleInternetGateway'
       RouteTableId: !Ref 'HeadscaleRouteTable'
     Type: AWS::EC2::Route
+  SSMRoleForEC2:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonSSMPatchAssociation
+    Type: AWS::IAM::Role
   TriggerLambdaCustomResource:
     DependsOn:
       - Ipv6CidrBlockSSMParameter

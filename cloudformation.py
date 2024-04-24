@@ -174,6 +174,27 @@ subnet_route_table_association = template.add_resource(ec2.SubnetRouteTableAssoc
     RouteTableId=Ref(route_table),
 ))
 
+ssm_ec2_role = template.add_resource(iam.Role(
+    "SSMRoleForEC2",
+    AssumeRolePolicyDocument={
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"Service": ["ec2.amazonaws.com"]},
+            "Action": ["sts:AssumeRole"]
+        }]
+    },
+    ManagedPolicyArns=[
+        "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+        "arn:aws:iam::aws:policy/AmazonSSMPatchAssociation"
+    ],
+))
+
+instance_profile = template.add_resource(iam.InstanceProfile(
+    "InstanceProfile",
+    Roles=[Ref(ssm_ec2_role)],
+))
+
 security_group = template.add_resource(ec2.SecurityGroup(
     "HeadscaleSecurityGroup",
     GroupDescription="Headscale EC2 Security Group",
@@ -212,6 +233,7 @@ ec2_instance = template.add_resource(ec2.Instance(
     "EC2Instance",
     ImageId="ami-08116b9957a259459",
     InstanceType="t2.micro",
+    IamInstanceProfile=Ref(instance_profile),
     KeyName=Ref(ec2_keypair),
     Tenancy="default",
     NetworkInterfaces=[network_interface],
@@ -233,7 +255,7 @@ ec2_instance = template.add_resource(ec2.Instance(
         "sed -i '/acme_email:/s/.*/acme_email: \"headscale@r6t.io\"/' /etc/headscale/config.yaml\n",
         "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"headscale.r6t.io\"/' /etc/headscale/config.yaml\n"
         "sed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type: TLS-ALPN-01#' /etc/headscale/config.yaml\n",
-        "sed -i 's#base_domain: #base_domain: magic.r6t.io#' /etc/headscale/config.yaml\n",
+        "sed -i 's#base_domain: example.com#base_domain: magic.r6t.io#' /etc/headscale/config.yaml\n",
         "sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - 2001:1608:10:25::1c04:b12f#' /etc/headscale/config.yaml\n",
         "systemctl enable headscale\n",
         "reboot\n",
