@@ -1,4 +1,4 @@
-from troposphere import Parameter, Ref, Template, Select, GetAZs, Tag, Output, Join, GetAtt, Base64, Sub
+from troposphere import Parameter, Ref, Template, Select, GetAZs, Tag, Output, Join, GetAtt, Base64
 from troposphere import awslambda, cloudformation, ec2, iam, ssm
 from troposphere.route53 import RecordSetType
 
@@ -241,8 +241,7 @@ ec2_instance = template.add_resource(ec2.Instance(
         "#!/bin/bash\n",
         "export DEBIAN_FRONTEND=noninteractive\n",
         "apt update\n",
-        "apt install neovim python3-pip -y\n",
-        "pip3 install yq\n",
+        "apt install neovim -y\n",
         "apt upgrade -y\n",
         "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v",
         Ref(headscale_release_parameter),
@@ -250,33 +249,17 @@ ec2_instance = template.add_resource(ec2.Instance(
         Ref(headscale_release_parameter),
         "_linux_amd64.deb\n",
         "apt install ./headscale.deb -y\n",
-        "sed -i 's#server_url: http://127.0.0.1:8080#server_url: https://",
-        Ref(stack_name_parameter),
-        ".",
-        GetAtt(ssm_lambda_invocation, "DomainName"),
-        "#' /etc/headscale/config.yaml\n",
-        "sed -i 's#listen_addr: 127.0.0.1:8080#listen_addr: 0.0.0.0:443#' /etc/headscale/config.yaml\n",
-        "sed -i '/acme_email:/s/.*/acme_email: \"headscale@",
-        GetAtt(ssm_lambda_invocation, "DomainName"),
-        "\"/' /etc/headscale/config.yaml\n",
-        "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"",
-        Ref(stack_name_parameter),
-        ".",
-        GetAtt(ssm_lambda_invocation, "DomainName"),
-        "\"/' /etc/headscale/config.yaml\n",
-        "sed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type: TLS-ALPN-01#' /etc/headscale/config.yaml\n",
-        "sed -i 's#base_domain: example.com#base_domain: ",
-        Ref(magicdns_parameter),
-        "#' /etc/headscale/config.yaml\n",
-        "yq eval '.nameservers[0] = \"https://dns.nextdns.io/",
-        Ref(nextdns_id_parameter),
-        "\"' -i /etc/headscale/config.yaml\n",
-        "systemctl enable headscale\n",
+        ### drop example config and place real one
+        # "systemctl enable headscale\n",
         "reboot\n",
     ])),
     Tags=[
         Tag("Name", Ref(stack_name_parameter))
-    ]
+    ],
+    # MetadataOptions={
+    #     "HttpTokens"="required",  # Notice the quotes around HttpTokens
+    #     "HttpPutResponseHopLimit"=1  # Quotes around HttpPutResponseHopLimit
+    # },
 ))
 
 dns_execution_role = template.add_resource(iam.Role(
@@ -343,7 +326,7 @@ aaaa_record = template.add_resource(RecordSetType(
     HostedZoneId=Ref(hosted_zone_id_parameter),
     Name=Join("", [Ref(stack_name_parameter), ".", GetAtt(ssm_lambda_invocation, "DomainName")]),
     Type="AAAA",
-    TTL="300",
+    TTL="60",
     ResourceRecords=[GetAtt(dns_lambda_invocation, "Ipv6Address")],
 ))
 

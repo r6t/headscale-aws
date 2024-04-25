@@ -37,7 +37,7 @@ Resources:
           - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
       ResourceRecords:
         - !GetAtt 'DNSLambdaInvocation.Ipv6Address'
-      TTL: '300'
+      TTL: '60'
       Type: AAAA
     Type: AWS::Route53::RecordSet
   DNSLambdaExecutionRole:
@@ -116,8 +116,7 @@ Resources:
           - - "#!/bin/bash\n"
             - "export DEBIAN_FRONTEND=noninteractive\n"
             - "apt update\n"
-            - "apt install neovim python3-pip -y\n"
-            - "pip3 install yq\n"
+            - "apt install neovim -y\n"
             - "apt upgrade -y\n"
             - wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v
             - !Ref 'HeadscaleRelease'
@@ -125,28 +124,6 @@ Resources:
             - !Ref 'HeadscaleRelease'
             - "_linux_amd64.deb\n"
             - "apt install ./headscale.deb -y\n"
-            - 'sed -i ''s#server_url: http://127.0.0.1:8080#server_url: https://'
-            - !Ref 'StackName'
-            - .
-            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
-            - "#' /etc/headscale/config.yaml\n"
-            - "sed -i 's#listen_addr: 127.0.0.1:8080#listen_addr: 0.0.0.0:443#' /etc/headscale/config.yaml\n"
-            - 'sed -i ''/acme_email:/s/.*/acme_email: "headscale@'
-            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
-            - "\"/' /etc/headscale/config.yaml\n"
-            - 'sed -i ''/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: "'
-            - !Ref 'StackName'
-            - .
-            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
-            - "\"/' /etc/headscale/config.yaml\n"
-            - "sed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type: TLS-ALPN-01#' /etc/headscale/config.yaml\n"
-            - 'sed -i ''s#base_domain: example.com#base_domain: '
-            - !Ref 'MagicDnsName'
-            - "#' /etc/headscale/config.yaml\n"
-            - yq eval '.nameservers[0] = "https://dns.nextdns.io/
-            - !Ref 'NextDnsId'
-            - "\"' -i /etc/headscale/config.yaml\n"
-            - "systemctl enable headscale\n"
             - "reboot\n"
     Type: AWS::EC2::Instance
   HeadscaleInternetGateway:

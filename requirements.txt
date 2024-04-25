@@ -1,2 +1,2 @@
 boto3
-troposphere
+troposphere==4.7.0
