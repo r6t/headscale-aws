@@ -343,13 +343,6 @@ aaaa_record = template.add_resource(RecordSetType(
 ))
 
 template.add_output(Output(
-    "IPv6Record",
-    Description="Headscale EC2 IPv6 address",
-    Value=Ref(aaaa_record),
-))
-
-
-template.add_output(Output(
     "HeadscaleApplicationURL",
     Description="Headscale application URL",
     Value=Join("", [
