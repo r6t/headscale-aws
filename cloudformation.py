@@ -35,6 +35,7 @@ magicdns_parameter = template.add_parameter(Parameter(
     "MagicDnsName",
     Description="MagicDNS/Headscale internal network domain name",
     Type="String",
+    Default="magic.internal",
 ))
 
 ipv6_cidr_ssm = template.add_resource(ssm.Parameter(
@@ -242,31 +243,50 @@ ec2_instance = template.add_resource(ec2.Instance(
         "apt update\n",
         "apt install neovim -y\n",
         "apt upgrade -y\n",
-        "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha9/headscale_0.23.0-alpha9_linux_amd64.deb\n",
+        "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v",
+        Ref(headscale_release_parameter),
+        "/headscale_",
+        Ref(headscale_release_parameter),
+        "_linux_amd64.deb\n",
         "apt install ./headscale.deb -y\n",
-        "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://headscale\\.r6t\\.io:443#' /etc/headscale/config.yaml\n",
+        "sed -i 's#server_url: http://127.0.0.1:8080#server_url: https://",
+        Ref(stack_name_parameter),
+        ".",
+        GetAtt(ssm_lambda_invocation, "DomainName"),
+        ":443#' /etc/headscale/config.yaml\n",
         "sed -i 's#listen_addr: 127\\.0\\.0\\.1:8080#listen_addr: 0\\.0\\.0\\.0:443#' /etc/headscale/config.yaml\n",
         "sed -i '/acme_email:/s/.*/acme_email: \"headscale@",
-        r6t.io
+        GetAtt(ssm_lambda_invocation, "DomainName"),
         "\"/' /etc/headscale/config.yaml\n",
         "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"",
-        headscale.r6t.io,
+        Ref(stack_name_parameter),
+        ".",
+        GetAtt(ssm_lambda_invocation, "DomainName"),
         "\"/' /etc/headscale/config.yaml\n"
         "sed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type: TLS-ALPN-01#' /etc/headscale/config.yaml\n",
-        "sed -i 's#base_domain: #base_domain: magic.r6t.io#' /etc/headscale/config.yaml\n",
-        "sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - https://nextdns.io/",
-        Ref(nextdns_id_parameter),
+        "sed -i 's#base_domain: example.com#base_domain: ",
+        Ref(magicdns_parameter),
         "#' /etc/headscale/config.yaml\n",
+        "grep -v '    - 1.1.1.1' /etc/headscale/config.yaml > /tmp/config.yaml && mv /tmp/config.yaml /etc/headscale/config.yaml\n",
+        "awk '\n",
+        "BEGIN {replace=0}\n",
+        "/dns_config:/ {replace=1}\n",
+        "/nameservers:/ && replace==1 {\n",
+        "  print \"nameservers:\n- https://nextdns.io/",
+        Ref(nextdns_id_parameter),
+        "  \";\n",
+        "  replace=2;\n",
+        "  next\n",
+        "}\n",
+        "replace==2 && /^-/ {next}\n",
+        "{print}\n",
+        "' /etc/headscale/config.yaml > /tmp/config.yaml && mv /tmp/config.yaml /etc/headscale/config.yaml\n",
         "systemctl enable headscale\n",
         "reboot\n",
     ])),
     Tags=[
         Tag("Name", Ref(stack_name_parameter))
     ],
-    # MetadataOptions={
-    #     "HttpTokens"="required",  # Notice the quotes around HttpTokens
-    #     "HttpPutResponseHopLimit"=1  # Quotes around HttpPutResponseHopLimit
-    # },
 ))
 
 dns_execution_role = template.add_resource(iam.Role(
