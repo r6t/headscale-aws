@@ -121,7 +121,8 @@ ssm_lambda_execution_role = template.add_resource(iam.Role(
                     "ssm:DeleteParameter",
                     "ssm:GetParameter",
                     "ssm:GetParameters",
-                    "ssm:PutParameter"
+                    "ssm:PutParameter",
+                    "route53:GetHostedZone"
                 ],
                 "Resource": "*"
             }]
@@ -148,6 +149,7 @@ ssm_lambda_invocation = template.add_resource(cloudformation.CustomResource(
     "TriggerSSMLambdaCustomResource",
     DependsOn=[ipv6_cidr_ssm],
     ServiceToken=GetAtt(ssm_function, "Arn"),
+    HostedZoneId=Ref(hosted_zone_id_parameter),
 ))
 
 subnet = template.add_resource(ec2.Subnet(

@@ -267,6 +267,7 @@ Resources:
                   - ssm:GetParameter
                   - ssm:GetParameters
                   - ssm:PutParameter
+                  - route53:GetHostedZone
                 Effect: Allow
                 Resource: '*'
             Version: '2012-10-17'
@@ -314,5 +315,6 @@ Resources:
     DependsOn:
       - Ipv6CidrBlockSSM
     Properties:
+      HostedZoneId: !Ref 'HostedZoneId'
       ServiceToken: !GetAtt 'SSMLambdaFunction.Arn'
     Type: AWS::CloudFormation::CustomResource
