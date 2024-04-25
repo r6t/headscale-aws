@@ -205,6 +205,8 @@ Resources:
           Value: !Ref 'StackName'
     Type: AWS::EC2::VPC
   HeadscaleVpcGatewayAttachment:
+    DependsOn:
+      - Headscaleipv6CidrBlock
     Properties:
       InternetGatewayId: !Ref 'HeadscaleInternetGateway'
       VpcId: !Ref 'HeadscaleVpc'
@@ -226,12 +228,16 @@ Resources:
       Value: The SSM parameter containing the Headscale VPC IPv6 CIDR block has not been set.
     Type: AWS::SSM::Parameter
   Ipv6Route:
+    DependsOn:
+      - Route
     Properties:
       DestinationIpv6CidrBlock: ::/0
       GatewayId: !Ref 'HeadscaleInternetGateway'
       RouteTableId: !Ref 'HeadscaleRouteTable'
     Type: AWS::EC2::Route
   Route:
+    DependsOn:
+      - HeadscaleVpcGatewayAttachment
     Properties:
       DestinationCidrBlock: '0.0.0.0/0'
       GatewayId: !Ref 'HeadscaleInternetGateway'
@@ -267,19 +273,21 @@ Resources:
           PolicyName: root
     Type: AWS::IAM::Role
   SSMLambdaFunction:
+    DependsOn:
+      - Ipv6Route
     Properties:
       Code:
-        ZipFile: "import boto3\nimport cfnresponse\n\ndef lambda_handler(event, context):\n    ec2_client = boto3.client('ec2')\n    route53_client = boto3.client('route53')\n    ssm_client = boto3.client('ssm')\n\
+        ZipFile: "import json\nimport boto3\nimport cfnresponse\n\ndef lambda_handler(event, context):\n    ec2_client = boto3.client('ec2')\n    ssm_client = boto3.client('ssm')\n    r53_client = boto3.client('route53')\n\
           \    \n    try:\n        if event['RequestType'] in ['Create', 'Update']:\n            vpcs_response = ec2_client.describe_vpcs(Filters=[{\"Name\": \"tag:Name\", \"Values\": [\"headscale\"]}])\n\
-          \            if not vpcs_response[\"Vpcs\"]:\n                raise ValueError(\"No VPC found with the name headscale\")\n\n            vpc_id = vpcs_response[\"Vpcs\"][0][\"VpcId\"]\n       \
-          \     ipv6_cidr_block = vpcs_response[\"Vpcs\"][0][\"Ipv6CidrBlockAssociationSet\"][0][\"Ipv6CidrBlock\"]\n            ssm_client.put_parameter(\n                    Name=\"/config/headscale/ipv6CidrBlock\"\
+          \n            if not vpcs_response[\"Vpcs\"]:\n                raise ValueError(\"No VPC found with the name headscale\")\n\n            vpc_id = vpcs_response[\"Vpcs\"][0][\"VpcId\"]\n      \
+          \      ipv6_cidr_block = vpcs_response[\"Vpcs\"][0][\"Ipv6CidrBlockAssociationSet\"][0][\"Ipv6CidrBlock\"]\n            ssm_client.put_parameter(\n                    Name=\"/config/headscale/ipv6CidrBlock\"\
           ,\n                    Value=ipv6_cidr_block,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n\n            hosted_zone_id = event['ResourceProperties']['HostedZoneId']\n\
-          \            hosted_zone = route53_client.get_hosted_zone(Id=hosted_zone_id)\n            domain_name = hosted_zone['HostedZone']['Name'].rstrip('.')\n            ssm_client.put_parameter(\n \
-          \                   Name=\"/config/headscale/domainName\",\n                    Value=domain_name,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n\
-          \n            responseData = {'Ipv6CidrBlock': ipv6_cidr_block, 'DomainName': domain_name}\n            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)\n        \n        elif\
-          \ event['RequestType'] == 'Delete':\n            ssm_client.delete_parameter(Name=\"/config/headscale/ipv6CidrBlock\")\n            ssm_client.delete_parameter(Name=\"/config/headscale/domainName\"\
-          )\n            cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, \"CustomResourcePhysicalID\")\n\n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event,\
-          \ context, cfnresponse.FAILED, responseData, \"CustomResourcePhysicalID\")\n"
+          \            hosted_zone = r53_client.get_hosted_zone(Id=hosted_zone_id)\n            domain_name = hosted_zone['HostedZone']['Name'].rstrip('.')\n            ssm_client.put_parameter(\n     \
+          \               Name=\"/config/headscale/domainName\",\n                    Value=domain_name,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n  \
+          \          \n            responseData = {'Ipv6CidrBlock': ipv6_cidr_block}\n            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)\n        \n        elif event['RequestType']\
+          \ == 'Delete':\n            ssm_client.delete_parameter(Name=\"/config/headscale/ipv6CidrBlock\")\n            ssm_client.delete_parameter(Name=\"/config/headscale/domainName\")\n            cfnresponse.send(event,\
+          \ context, cfnresponse.SUCCESS, {}, \"CustomResourcePhysicalID\")\n\n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event, context, cfnresponse.FAILED,\
+          \ responseData, \"CustomResourcePhysicalID\")"
       Handler: index.lambda_handler
       Role: !GetAtt 'SSMLambdaExecutionRole.Arn'
       Runtime: python3.8

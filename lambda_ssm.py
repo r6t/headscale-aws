@@ -1,14 +1,16 @@
+import json
 import boto3
 import cfnresponse
 
 def lambda_handler(event, context):
     ec2_client = boto3.client('ec2')
-    route53_client = boto3.client('route53')
     ssm_client = boto3.client('ssm')
+    r53_client = boto3.client('route53')
     
     try:
         if event['RequestType'] in ['Create', 'Update']:
             vpcs_response = ec2_client.describe_vpcs(Filters=[{"Name": "tag:Name", "Values": ["headscale"]}])
+
             if not vpcs_response["Vpcs"]:
                 raise ValueError("No VPC found with the name headscale")
 
@@ -22,7 +24,7 @@ def lambda_handler(event, context):
                 )
 
             hosted_zone_id = event['ResourceProperties']['HostedZoneId']
-            hosted_zone = route53_client.get_hosted_zone(Id=hosted_zone_id)
+            hosted_zone = r53_client.get_hosted_zone(Id=hosted_zone_id)
             domain_name = hosted_zone['HostedZone']['Name'].rstrip('.')
             ssm_client.put_parameter(
                     Name="/config/headscale/domainName",
@@ -30,8 +32,8 @@ def lambda_handler(event, context):
                     Type="String",
                     Overwrite=True
                 )
-
-            responseData = {'Ipv6CidrBlock': ipv6_cidr_block, 'DomainName': domain_name}
+            
+            responseData = {'Ipv6CidrBlock': ipv6_cidr_block}
             cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
         
         elif event['RequestType'] == 'Delete':

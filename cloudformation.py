@@ -38,6 +38,64 @@ ipv6_cidr_ssm = template.add_resource(ssm.Parameter(
     Value="The SSM parameter containing the Headscale VPC IPv6 CIDR block has not been set.",
 ))
 
+vpc = template.add_resource(ec2.VPC(
+    "HeadscaleVpc",
+    CidrBlock="10.0.0.0/16",
+    EnableDnsSupport=True,
+    EnableDnsHostnames=True,
+    InstanceTenancy="default",
+    Tags=[{
+        "Key": "Name",
+        "Value": Ref(stack_name_parameter),
+    }],
+))
+
+vpcCidrBlock = template.add_resource(ec2.VPCCidrBlock(
+    "Headscaleipv6CidrBlock",
+    VpcId=Ref(vpc),
+    AmazonProvidedIpv6CidrBlock=True,
+))
+
+igw = template.add_resource(ec2.InternetGateway(
+    "HeadscaleInternetGateway",
+    Tags=[{
+        "Key": "Name",
+        "Value": Ref(stack_name_parameter)
+    }],
+))
+
+gateway_attachment = template.add_resource(ec2.VPCGatewayAttachment(
+    "HeadscaleVpcGatewayAttachment",
+    DependsOn=[vpcCidrBlock],
+    VpcId=Ref(vpc),
+    InternetGatewayId=Ref(igw),
+))
+
+route_table = template.add_resource(ec2.RouteTable(
+    "HeadscaleRouteTable",
+    VpcId=Ref(vpc),
+    Tags=[{
+        "Key": "Name",
+        "Value": Ref(stack_name_parameter)
+    }],
+))
+
+route = template.add_resource(ec2.Route(
+    "Route",
+    DependsOn=[gateway_attachment],
+    RouteTableId=Ref(route_table),
+    DestinationCidrBlock="0.0.0.0/0",
+    GatewayId=Ref(igw),
+))
+
+ipv6_route = template.add_resource(ec2.Route(
+    "Ipv6Route",
+    DependsOn=[route],
+    RouteTableId=Ref(route_table),
+    DestinationIpv6CidrBlock="::/0",
+    GatewayId=Ref(igw),
+))
+
 ssm_lambda_execution_role = template.add_resource(iam.Role(
     "SSMLambdaExecutionRole",
     AssumeRolePolicyDocument={
@@ -79,6 +137,7 @@ ssm_function = template.add_resource(awslambda.Function(
     Code=awslambda.Code(
         ZipFile=ssm_lambda_function_code,
     ),
+    DependsOn=[ipv6_route],
     Handler="index.lambda_handler",
     Role=GetAtt(ssm_lambda_execution_role, "Arn"),
     Runtime="python3.8",
@@ -89,61 +148,6 @@ ssm_lambda_invocation = template.add_resource(cloudformation.CustomResource(
     "TriggerSSMLambdaCustomResource",
     DependsOn=[ipv6_cidr_ssm],
     ServiceToken=GetAtt(ssm_function, "Arn"),
-))
-
-vpc = template.add_resource(ec2.VPC(
-    "HeadscaleVpc",
-    CidrBlock="10.0.0.0/16",
-    EnableDnsSupport=True,
-    EnableDnsHostnames=True,
-    InstanceTenancy="default",
-    Tags=[{
-        "Key": "Name",
-        "Value": Ref(stack_name_parameter),
-    }],
-))
-
-vpcCidrBlock = template.add_resource(ec2.VPCCidrBlock(
-    "Headscaleipv6CidrBlock",
-    VpcId=Ref(vpc),
-    AmazonProvidedIpv6CidrBlock=True,
-))
-
-igw = template.add_resource(ec2.InternetGateway(
-    "HeadscaleInternetGateway",
-    Tags=[{
-        "Key": "Name",
-        "Value": Ref(stack_name_parameter)
-    }],
-))
-
-gateway_attachment = template.add_resource(ec2.VPCGatewayAttachment(
-    "HeadscaleVpcGatewayAttachment",
-    VpcId=Ref(vpc),
-    InternetGatewayId=Ref(igw),
-))
-
-route_table = template.add_resource(ec2.RouteTable(
-    "HeadscaleRouteTable",
-    VpcId=Ref(vpc),
-    Tags=[{
-        "Key": "Name",
-        "Value": Ref(stack_name_parameter)
-    }],
-))
-
-route = template.add_resource(ec2.Route(
-    "Route",
-    RouteTableId=Ref(route_table),
-    DestinationCidrBlock="0.0.0.0/0",
-    GatewayId=Ref(igw),
-))
-
-ipv6_route = template.add_resource(ec2.Route(
-    "Ipv6Route",
-    RouteTableId=Ref(route_table),
-    DestinationIpv6CidrBlock="::/0",
-    GatewayId=Ref(igw),
 ))
 
 subnet = template.add_resource(ec2.Subnet(
