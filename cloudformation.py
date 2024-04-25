@@ -1,4 +1,4 @@
-from troposphere import Parameter, Ref, Template, Select, GetAZs, Tag, Output, Join, GetAtt, Base64
+from troposphere import Parameter, Ref, Template, Select, GetAZs, Tag, Output, Join, GetAtt, Base64, Sub
 from troposphere import awslambda, cloudformation, ec2, iam, ssm
 from troposphere.route53 import RecordSetType
 
@@ -10,6 +10,13 @@ stack_name_parameter = template.add_parameter(Parameter(
     Description="Base name for resources. Meant to be headscale, changing can be useful for multiple stacks",
     Type="String",
     Default="headscale",
+))
+
+headscale_release_parameter = template.add_parameter(Parameter(
+    "HeadscaleRelease",
+    Description="Headscale release version to use: https://github.com/juanfont/headscale/releases",
+    Type="String",
+    Default="0.23.0-alpha9",
 ))
 
 hosted_zone_id_parameter = template.add_parameter(Parameter(
@@ -25,7 +32,7 @@ nextdns_id_parameter = template.add_parameter(Parameter(
 ))
 
 ipv6_cidr_ssm = template.add_resource(ssm.Parameter(
-    "Ipv6CidrBlockSSMParameter",
+    "Ipv6CidrBlockSSM",
     Name="headscaleIPv6CidrBlock",
     Type="String",
     Value="The SSM parameter containing the Headscale VPC IPv6 CIDR block has not been set.",
@@ -79,11 +86,10 @@ ssm_function = template.add_resource(awslambda.Function(
 ))
 
 ssm_lambda_invocation = template.add_resource(cloudformation.CustomResource(
-    "TriggerLambdaCustomResource",
+    "TriggerSSMLambdaCustomResource",
     DependsOn=[ipv6_cidr_ssm],
     ServiceToken=GetAtt(ssm_function, "Arn"),
 ))
-
 
 vpc = template.add_resource(ec2.VPC(
     "HeadscaleVpc",
@@ -225,16 +231,35 @@ ec2_instance = template.add_resource(ec2.Instance(
         "apt update\n",
         "apt install neovim -y\n",
         "apt upgrade -y\n",
-        "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha9/headscale_0.23.0-alpha9_linux_amd64.deb\n",
+        "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v",
+        Ref(headscale_release_parameter),
+        "/headscale_",
+        Ref(headscale_release_parameter),
+        "_linux_amd64.deb\n",
         "apt install ./headscale.deb -y\n",
-        f"SERVER_URL=$(aws ssm get-parameter --name 'your_ssm_parameter_for_domain' --query 'Parameter.Value' --output text)\n",
-        "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://${SERVER_URL}#' /etc/headscale/config.yaml\n",
-        "sed -i 's#listen_addr: 127\\.0\\.0\\.1:8080#listen_addr: 0\\.0\\.0\\.0:443#' /etc/headscale/config.yaml\n",
-        "sed -i '/acme_email:/s/.*/acme_email: \"headscale@${SERVER_URL}\"/' /etc/headscale/config.yaml\n",
-        "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"${SERVER_URL}\"/' /etc/headscale/config.yaml\n"
+        "sed -i 's#server_url: http://127.0.0.1:8080#server_url: https://",
+        Ref(stack_name_parameter),
+        ".",
+        GetAtt(ssm_lambda_invocation, "DomainName"),
+        "#' /etc/headscale/config.yaml\n",
+        "sed -i 's#listen_addr: 127.0.0.1:8080#listen_addr: 0.0.0.0:443#' /etc/headscale/config.yaml\n",
+        "sed -i '/acme_email:/s/.*/acme_email: \"headscale@",
+        GetAtt(ssm_lambda_invocation, "DomainName"),
+        "\"/' /etc/headscale/config.yaml\n",
+        "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"",
+        Ref(stack_name_parameter),
+        ".",
+        GetAtt(ssm_lambda_invocation, "DomainName"),
+        "\"/' /etc/headscale/config.yaml\n",
         "sed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type: TLS-ALPN-01#' /etc/headscale/config.yaml\n",
-        "sed -i 's#base_domain: example.com#base_domain: ${SERVER_URL}#' /etc/headscale/config.yaml\n",
-        f"sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - https://dns.nextdns.io/{Ref(nextdns_id_parameter)}#' /etc/headscale/config.yaml\n",
+        "sed -i 's#base_domain: example.com#base_domain: ",
+        Ref(stack_name_parameter),
+        ".",
+        GetAtt(ssm_lambda_invocation, "DomainName"),
+        "#' /etc/headscale/config.yaml\n",
+        "sed -i 's#nameservers:\n - 1.1.1.1#nameservers:\n - https://dns.nextdns.io/",
+        Ref(nextdns_id_parameter),
+        "#' /etc/headscale/config.yaml\n",
         "systemctl enable headscale\n",
         "reboot\n",
     ])),

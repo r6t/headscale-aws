@@ -1,5 +1,9 @@
 Description: Headscale IPv6-centric EC2 stack
 Parameters:
+  HeadscaleRelease:
+    Default: '0.23.0-alpha9'
+    Description: 'Headscale release version to use: https://github.com/juanfont/headscale/releases'
+    Type: String
   HostedZoneId:
     Description: Hosted Zone ID for the Headscale endpoint record.
     Type: String
@@ -18,7 +22,7 @@ Resources:
         - ''
         - - !Ref 'StackName'
           - .
-          - !GetAtt 'TriggerLambdaCustomResource.DomainName'
+          - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
       ResourceRecords:
         - !GetAtt 'DNSLambdaInvocation.Ipv6Address'
       TTL: '30'
@@ -101,16 +105,35 @@ Resources:
             - "apt update\n"
             - "apt install neovim -y\n"
             - "apt upgrade -y\n"
-            - "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha9/headscale_0.23.0-alpha9_linux_amd64.deb\n"
+            - wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v
+            - !Ref 'HeadscaleRelease'
+            - /headscale_
+            - !Ref 'HeadscaleRelease'
+            - "_linux_amd64.deb\n"
             - "apt install ./headscale.deb -y\n"
-            - "SERVER_URL=$(aws ssm get-parameter --name 'your_ssm_parameter_for_domain' --query 'Parameter.Value' --output text)\n"
-            - "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://${SERVER_URL}#' /etc/headscale/config.yaml\n"
-            - "sed -i 's#listen_addr: 127\\.0\\.0\\.1:8080#listen_addr: 0\\.0\\.0\\.0:443#' /etc/headscale/config.yaml\n"
-            - "sed -i '/acme_email:/s/.*/acme_email: \"headscale@${SERVER_URL}\"/' /etc/headscale/config.yaml\n"
-            - "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"${SERVER_URL}\"/' /etc/headscale/config.yaml\nsed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type:\
-              \ TLS-ALPN-01#' /etc/headscale/config.yaml\n"
-            - "sed -i 's#base_domain: example.com#base_domain: ${SERVER_URL}#' /etc/headscale/config.yaml\n"
-            - "sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - https://dns.nextdns.io/<troposphere.Ref object at 0x7f9c89edf010>#' /etc/headscale/config.yaml\n"
+            - 'sed -i ''s#server_url: http://127.0.0.1:8080#server_url: https://'
+            - !Ref 'StackName'
+            - .
+            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
+            - "#' /etc/headscale/config.yaml\n"
+            - "sed -i 's#listen_addr: 127.0.0.1:8080#listen_addr: 0.0.0.0:443#' /etc/headscale/config.yaml\n"
+            - 'sed -i ''/acme_email:/s/.*/acme_email: "headscale@'
+            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
+            - "\"/' /etc/headscale/config.yaml\n"
+            - 'sed -i ''/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: "'
+            - !Ref 'StackName'
+            - .
+            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
+            - "\"/' /etc/headscale/config.yaml\n"
+            - "sed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type: TLS-ALPN-01#' /etc/headscale/config.yaml\n"
+            - 'sed -i ''s#base_domain: example.com#base_domain: '
+            - !Ref 'StackName'
+            - .
+            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
+            - "#' /etc/headscale/config.yaml\n"
+            - "sed -i 's#nameservers:\n - 1.1.1.1#nameservers:\n - https://dns.nextdns.io/"
+            - !Ref 'NextDnsId'
+            - "#' /etc/headscale/config.yaml\n"
             - "systemctl enable headscale\n"
             - "reboot\n"
     Type: AWS::EC2::Instance
@@ -127,7 +150,7 @@ Resources:
         - '0'
         - !GetAZs ''
       CidrBlock: 10.0.1.0/24
-      Ipv6CidrBlock: !GetAtt 'TriggerLambdaCustomResource.Ipv6CidrBlock'
+      Ipv6CidrBlock: !GetAtt 'TriggerSSMLambdaCustomResource.Ipv6CidrBlock'
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -184,7 +207,7 @@ Resources:
       Roles:
         - !Ref 'SSMRoleForEC2'
     Type: AWS::IAM::InstanceProfile
-  Ipv6CidrBlockSSMParameter:
+  Ipv6CidrBlockSSM:
     Properties:
       Name: headscaleIPv6CidrBlock
       Type: String
@@ -265,9 +288,9 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
         - arn:aws:iam::aws:policy/AmazonSSMPatchAssociation
     Type: AWS::IAM::Role
-  TriggerLambdaCustomResource:
+  TriggerSSMLambdaCustomResource:
     DependsOn:
-      - Ipv6CidrBlockSSMParameter
+      - Ipv6CidrBlockSSM
     Properties:
       ServiceToken: !GetAtt 'SSMLambdaFunction.Arn'
     Type: AWS::CloudFormation::CustomResource
