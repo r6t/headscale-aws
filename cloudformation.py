@@ -31,6 +31,12 @@ nextdns_id_parameter = template.add_parameter(Parameter(
     Type="String",
 ))
 
+magicdns_parameter = template.add_parameter(Parameter(
+    "MagicDnsName",
+    Description="MagicDNS/Headscale internal network domain name",
+    Type="String",
+))
+
 ipv6_cidr_ssm = template.add_resource(ssm.Parameter(
     "Ipv6CidrBlockSSM",
     Name="headscaleIPv6CidrBlock",
@@ -211,7 +217,6 @@ security_group = template.add_resource(ec2.SecurityGroup(
     Tags=[{"Key": "Name", "Value": Ref(stack_name_parameter)}],
 ))
 
-
 network_interface = ec2.NetworkInterfaceProperty(
     DeviceIndex=0,
     SubnetId=Ref(subnet),
@@ -234,8 +239,10 @@ ec2_instance = template.add_resource(ec2.Instance(
     ),
     UserData=Base64(Join('', [
         "#!/bin/bash\n",
+        "export DEBIAN_FRONTEND=noninteractive\n",
         "apt update\n",
-        "apt install neovim -y\n",
+        "apt install neovim python3-pip -y\n",
+        "pip3 install yq\n",
         "apt upgrade -y\n",
         "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v",
         Ref(headscale_release_parameter),
@@ -259,13 +266,11 @@ ec2_instance = template.add_resource(ec2.Instance(
         "\"/' /etc/headscale/config.yaml\n",
         "sed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type: TLS-ALPN-01#' /etc/headscale/config.yaml\n",
         "sed -i 's#base_domain: example.com#base_domain: ",
-        Ref(stack_name_parameter),
-        ".",
-        GetAtt(ssm_lambda_invocation, "DomainName"),
+        Ref(magicdns_parameter),
         "#' /etc/headscale/config.yaml\n",
-        "sed -i 's#nameservers:\n - 1.1.1.1#nameservers:\n - https://dns.nextdns.io/",
+        "yq eval '.nameservers[0] = \"https://dns.nextdns.io/",
         Ref(nextdns_id_parameter),
-        "#' /etc/headscale/config.yaml\n",
+        "\"' -i /etc/headscale/config.yaml\n",
         "systemctl enable headscale\n",
         "reboot\n",
     ])),

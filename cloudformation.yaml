@@ -16,6 +16,9 @@ Parameters:
   HostedZoneId:
     Description: Hosted Zone ID for the Headscale endpoint record.
     Type: String
+  MagicDnsName:
+    Description: MagicDNS/Headscale internal network domain name
+    Type: String
   NextDnsId:
     Description: NextDNS account to be used with Headscale
     Type: String
@@ -111,8 +114,10 @@ Resources:
         Fn::Join:
           - ''
           - - "#!/bin/bash\n"
+            - "export DEBIAN_FRONTEND=noninteractive\n"
             - "apt update\n"
-            - "apt install neovim -y\n"
+            - "apt install neovim python3-pip -y\n"
+            - "pip3 install yq\n"
             - "apt upgrade -y\n"
             - wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v
             - !Ref 'HeadscaleRelease'
@@ -136,13 +141,11 @@ Resources:
             - "\"/' /etc/headscale/config.yaml\n"
             - "sed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type: TLS-ALPN-01#' /etc/headscale/config.yaml\n"
             - 'sed -i ''s#base_domain: example.com#base_domain: '
-            - !Ref 'StackName'
-            - .
-            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
+            - !Ref 'MagicDnsName'
             - "#' /etc/headscale/config.yaml\n"
-            - "sed -i 's#nameservers:\n - 1.1.1.1#nameservers:\n - https://dns.nextdns.io/"
+            - yq eval '.nameservers[0] = "https://dns.nextdns.io/
             - !Ref 'NextDnsId'
-            - "#' /etc/headscale/config.yaml\n"
+            - "\"' -i /etc/headscale/config.yaml\n"
             - "systemctl enable headscale\n"
             - "reboot\n"
     Type: AWS::EC2::Instance
