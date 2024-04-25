@@ -10,7 +10,6 @@ def lambda_handler(event, context):
     try:
         if event['RequestType'] in ['Create', 'Update']:
             vpcs_response = ec2_client.describe_vpcs(Filters=[{"Name": "tag:Name", "Values": ["headscale"]}])
-
             if not vpcs_response["Vpcs"]:
                 raise ValueError("No VPC found with the name headscale")
 
@@ -37,8 +36,14 @@ def lambda_handler(event, context):
             cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
         
         elif event['RequestType'] == 'Delete':
-            ssm_client.delete_parameter(Name="/config/headscale/ipv6CidrBlock")
-            ssm_client.delete_parameter(Name="/config/headscale/domainName")
+            try:
+                ssm_client.delete_parameter(Name="/config/headscale/ipv6CidrBlock")
+            except ssm_client.exceptions.ParameterNotFound:
+                print("/config/headscale/ipv6CidrBlock not found. Skipping delete.")
+            try:
+                ssm_client.delete_parameter(Name="/config/headscale/domainName")
+            except ssm_client.exceptions.ParameterNotFound:
+                print("/config/headscale/domainName not found. Skipping delete.")
             cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "CustomResourcePhysicalID")
 
     except Exception as e:
