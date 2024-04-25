@@ -99,7 +99,7 @@ vpc = template.add_resource(ec2.VPC(
     InstanceTenancy="default",
     Tags=[{
         "Key": "Name",
-        "Value": "headscale",
+        "Value": Ref(stack_name_parameter),
     }],
 ))
 
@@ -113,7 +113,7 @@ igw = template.add_resource(ec2.InternetGateway(
     "HeadscaleInternetGateway",
     Tags=[{
         "Key": "Name",
-        "Value": "headscale",
+        "Value": Ref(stack_name_parameter)
     }],
 ))
 
@@ -128,7 +128,7 @@ route_table = template.add_resource(ec2.RouteTable(
     VpcId=Ref(vpc),
     Tags=[{
         "Key": "Name",
-        "Value": "headscale",
+        "Value": Ref(stack_name_parameter)
     }],
 ))
 
@@ -159,7 +159,7 @@ subnet = template.add_resource(ec2.Subnet(
     ),
     Tags=[{
         "Key": "Name",
-        "Value": "headscale-public",
+        "Value": Ref(stack_name_parameter)
     }],
 ))
 
@@ -202,7 +202,7 @@ security_group = template.add_resource(ec2.SecurityGroup(
             CidrIpv6="::/0",
         ),
     ],
-    Tags=[{"Key": "Name", "Value": "headscale"}],
+    Tags=[{"Key": "Name", "Value": Ref(stack_name_parameter)}],
 ))
 
 
@@ -264,7 +264,7 @@ ec2_instance = template.add_resource(ec2.Instance(
         "reboot\n",
     ])),
     Tags=[
-        Tag("Name", "headscale")
+        Tag("Name", Ref(stack_name_parameter))
     ]
 ))
 

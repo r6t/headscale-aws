@@ -96,7 +96,7 @@ Resources:
       SourceDestCheck: true
       Tags:
         - Key: Name
-          Value: headscale
+          Value: !Ref 'StackName'
       Tenancy: default
       UserData: !Base64
         Fn::Join:
@@ -141,7 +141,7 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: headscale
+          Value: !Ref 'StackName'
     Type: AWS::EC2::InternetGateway
   HeadscalePublicSubnet:
     Properties:
@@ -154,14 +154,14 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: headscale-public
+          Value: !Ref 'StackName'
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::Subnet
   HeadscaleRouteTable:
     Properties:
       Tags:
         - Key: Name
-          Value: headscale
+          Value: !Ref 'StackName'
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::RouteTable
   HeadscaleSecurityGroup:
@@ -174,7 +174,7 @@ Resources:
           ToPort: 443
       Tags:
         - Key: Name
-          Value: headscale
+          Value: !Ref 'StackName'
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::SecurityGroup
   HeadscaleSubnetRouteTableAssociation:
@@ -190,7 +190,7 @@ Resources:
       InstanceTenancy: default
       Tags:
         - Key: Name
-          Value: headscale
+          Value: !Ref 'StackName'
     Type: AWS::EC2::VPC
   HeadscaleVpcGatewayAttachment:
     Properties:
