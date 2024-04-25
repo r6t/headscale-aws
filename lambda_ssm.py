@@ -32,7 +32,10 @@ def lambda_handler(event, context):
                     Overwrite=True
                 )
             
-            responseData = {'Ipv6CidrBlock': ipv6_cidr_block}
+            responseData = {
+                'Ipv6CidrBlock': ipv6_cidr_block,
+                'DomainName': domain_name
+            }
             cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
         
         elif event['RequestType'] == 'Delete':
