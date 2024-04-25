@@ -332,8 +332,26 @@ aaaa_record = template.add_resource(RecordSetType(
     HostedZoneId=Ref(hosted_zone_id_parameter),
     Name=Join("", [Ref(stack_name_parameter), ".", GetAtt(ssm_lambda_invocation, "DomainName")]),
     Type="AAAA",
-    TTL="30",
+    TTL="300",
     ResourceRecords=[GetAtt(dns_lambda_invocation, "Ipv6Address")],
+))
+
+template.add_output(Output(
+    "IPv6Record",
+    Description="Headscale EC2 IPv6 address",
+    Value=Ref(aaaa_record),
+))
+
+
+template.add_output(Output(
+    "HeadscaleApplicationURL",
+    Description="Headscale application URL",
+    Value=Join("", [
+        "https://",
+        Ref(stack_name_parameter),
+        ".",
+        GetAtt(ssm_lambda_invocation, "DomainName")
+    ])
 ))
 
 with open('cloudformation.yaml', 'w') as file:

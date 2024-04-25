@@ -1,4 +1,16 @@
 Description: Headscale IPv6-centric EC2 stack
+Outputs:
+  HeadscaleApplicationURL:
+    Description: Headscale application URL
+    Value: !Join
+      - ''
+      - - https://
+        - !Ref 'StackName'
+        - .
+        - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
+  IPv6Record:
+    Description: Headscale EC2 IPv6 address
+    Value: !Ref 'AAAARecord'
 Parameters:
   HeadscaleRelease:
     Default: '0.23.0-alpha9'
@@ -25,7 +37,7 @@ Resources:
           - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
       ResourceRecords:
         - !GetAtt 'DNSLambdaInvocation.Ipv6Address'
-      TTL: '30'
+      TTL: '300'
       Type: AAAA
     Type: AWS::Route53::RecordSet
   DNSLambdaExecutionRole:
