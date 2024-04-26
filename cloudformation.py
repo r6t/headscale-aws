@@ -157,6 +157,7 @@ ssm_lambda_invocation = template.add_resource(cloudformation.CustomResource(
     DependsOn=[ipv6_cidr_ssm],
     ServiceToken=GetAtt(ssm_function, "Arn"),
     HostedZoneId=Ref(hosted_zone_id_parameter),
+    StackName=Ref(stack_name_parameter),
 ))
 
 subnet = template.add_resource(ec2.Subnet(
@@ -278,8 +279,6 @@ ec2_instance = template.add_resource(ec2.Instance(
         "          automatically_add_embedded_derp_region: true\n",
         "          ipv4: 1.2.3.4\n",
         "          ipv6: 2001:db8::1\n",
-        "          enabled: false\n",
-        "          enabled: false\n",
         "        urls:\n",
         "          - https://controlplane.tailscale.com/derpmap/default\n",
         "        paths: []\n",
@@ -302,12 +301,12 @@ ec2_instance = template.add_resource(ec2.Instance(
         "'\n",
         "      tls_letsencrypt_cache_dir: /var/lib/headscale/cache\n",
         "      tls_letsencrypt_challenge_type: TLS-ALPN-01\n",
-        "      tls_cert_path: ""\n",
-        "      tls_key_path: ""\n",
+        "      tls_cert_path: ''\n",
+        "      tls_key_path: ''\n",
         "      log:\n",
         "        format: text\n",
         "        level: info\n",
-        "      acl_policy_path: ""\n",
+        "      acl_policy_path: ''\n",
         "      dns_config:\n",
         "        override_local_dns: true\n",
         "        nameservers:\n",

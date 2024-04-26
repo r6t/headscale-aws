@@ -166,8 +166,6 @@ Resources:
             - "          automatically_add_embedded_derp_region: true\n"
             - "          ipv4: 1.2.3.4\n"
             - "          ipv6: 2001:db8::1\n"
-            - "          enabled: false\n"
-            - "          enabled: false\n"
             - "        urls:\n"
             - "          - https://controlplane.tailscale.com/derpmap/default\n"
             - "        paths: []\n"
@@ -190,12 +188,12 @@ Resources:
             - "'\n"
             - "      tls_letsencrypt_cache_dir: /var/lib/headscale/cache\n"
             - "      tls_letsencrypt_challenge_type: TLS-ALPN-01\n"
-            - "      tls_cert_path: \n"
-            - "      tls_key_path: \n"
+            - "      tls_cert_path: ''\n"
+            - "      tls_key_path: ''\n"
             - "      log:\n"
             - "        format: text\n"
             - "        level: info\n"
-            - "      acl_policy_path: \n"
+            - "      acl_policy_path: ''\n"
             - "      dns_config:\n"
             - "        override_local_dns: true\n"
             - "        nameservers:\n"
@@ -341,17 +339,18 @@ Resources:
     Properties:
       Code:
         ZipFile: "import json\nimport boto3\nimport cfnresponse\n\ndef lambda_handler(event, context):\n    ec2_client = boto3.client('ec2')\n    ssm_client = boto3.client('ssm')\n    r53_client = boto3.client('route53')\n\
-          \    \n    try:\n        if event['RequestType'] in ['Create', 'Update']:\n            vpcs_response = ec2_client.describe_vpcs(Filters=[{\"Name\": \"tag:Name\", \"Values\": [\"headscale\"]}])\n\
+          \    stack_name = event['ResourceProperties'].get('StackName', 'headscale')\n    ipv6_cidr_ssm_param_name = f\"/config/{stack_name}/ipv6CidrBlock\"\n    domain_name_ssm_param_name = f\"/config/{stack_name}/domainName\"\
+          \n    \n    try:\n        if event['RequestType'] in ['Create', 'Update']:\n            vpcs_response = ec2_client.describe_vpcs(Filters=[{\"Name\": \"tag:Name\", \"Values\": [stack_name]}])\n\
           \            if not vpcs_response[\"Vpcs\"]:\n                raise ValueError(\"No VPC found with the name headscale\")\n\n            vpc_id = vpcs_response[\"Vpcs\"][0][\"VpcId\"]\n       \
-          \     ipv6_cidr_block = vpcs_response[\"Vpcs\"][0][\"Ipv6CidrBlockAssociationSet\"][0][\"Ipv6CidrBlock\"]\n            ssm_client.put_parameter(\n                    Name=\"/config/headscale/ipv6CidrBlock\"\
-          ,\n                    Value=ipv6_cidr_block,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n\n            hosted_zone_id = event['ResourceProperties']['HostedZoneId']\n\
+          \     ipv6_cidr_block = vpcs_response[\"Vpcs\"][0][\"Ipv6CidrBlockAssociationSet\"][0][\"Ipv6CidrBlock\"]\n            ssm_client.put_parameter(\n                    Name=ipv6_cidr_ssm_param_name,\n\
+          \                    Value=ipv6_cidr_block,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n\n            hosted_zone_id = event['ResourceProperties']['HostedZoneId']\n\
           \            hosted_zone = r53_client.get_hosted_zone(Id=hosted_zone_id)\n            domain_name = hosted_zone['HostedZone']['Name'].rstrip('.')\n            ssm_client.put_parameter(\n     \
-          \               Name=\"/config/headscale/domainName\",\n                    Value=domain_name,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n  \
-          \          \n            responseData = {\n                'Ipv6CidrBlock': ipv6_cidr_block,\n                'DomainName': domain_name\n            }\n            cfnresponse.send(event, context,\
-          \ cfnresponse.SUCCESS, responseData)\n        \n        elif event['RequestType'] == 'Delete':\n            try:\n                ssm_client.delete_parameter(Name=\"/config/headscale/ipv6CidrBlock\"\
-          )\n            except ssm_client.exceptions.ParameterNotFound:\n                print(\"/config/headscale/ipv6CidrBlock not found. Skipping delete.\")\n            try:\n                ssm_client.delete_parameter(Name=\"\
-          /config/headscale/domainName\")\n            except ssm_client.exceptions.ParameterNotFound:\n                print(\"/config/headscale/domainName not found. Skipping delete.\")\n            cfnresponse.send(event,\
-          \ context, cfnresponse.SUCCESS, {}, \"CustomResourcePhysicalID\")\n\n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event, context, cfnresponse.FAILED,\
+          \               Name=domain_name_ssm_param_name,\n                    Value=domain_name,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n        \
+          \    \n            responseData = {\n                'Ipv6CidrBlock': ipv6_cidr_block,\n                'DomainName': domain_name\n            }\n            cfnresponse.send(event, context, cfnresponse.SUCCESS,\
+          \ responseData)\n        \n        elif event['RequestType'] == 'Delete':\n            try:\n                ssm_client.delete_parameter(Name=ipv6_cidr_block_ssm_param_name)\n            except\
+          \ ssm_client.exceptions.ParameterNotFound:\n                print(ipv6_cidr_block_ssm_param_name, \" not found. Skipping delete.\")\n            try:\n                ssm_client.delete_parameter(Name=domain_name_ssm_param_name)\n\
+          \            except ssm_client.exceptions.ParameterNotFound:\n                print(\"/config/headscale/domainName not found. Skipping delete.\")\n            cfnresponse.send(event, context,\
+          \ cfnresponse.SUCCESS, {}, \"CustomResourcePhysicalID\")\n\n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event, context, cfnresponse.FAILED,\
           \ responseData, \"CustomResourcePhysicalID\")"
       Handler: index.lambda_handler
       Role: !GetAtt 'SSMLambdaExecutionRole.Arn'
@@ -379,4 +378,5 @@ Resources:
     Properties:
       HostedZoneId: !Ref 'HostedZoneId'
       ServiceToken: !GetAtt 'SSMLambdaFunction.Arn'
+      StackName: !Ref 'StackName'
     Type: AWS::CloudFormation::CustomResource
