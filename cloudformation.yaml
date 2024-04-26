@@ -41,6 +41,19 @@ Resources:
       TTL: '60'
       Type: AAAA
     Type: AWS::Route53::RecordSet
+  ApplicationSG:
+    Properties:
+      GroupDescription: Headscale EC2 Security Group
+      SecurityGroupIngress:
+        - CidrIpv6: ::/0
+          FromPort: 443
+          IpProtocol: tcp
+          ToPort: 443
+      Tags:
+        - Key: Name
+          Value: !Ref 'StackName'
+      VpcId: !Ref 'HeadscaleVpc'
+    Type: AWS::EC2::SecurityGroup
   DNSLambdaExecutionRole:
     Properties:
       AssumeRolePolicyDocument:
@@ -104,7 +117,7 @@ Resources:
         - AssociatePublicIpAddress: true
           DeviceIndex: '0'
           GroupSet:
-            - !Ref 'HeadscaleSecurityGroup'
+            - !Ref 'ApplicationSG'
           SubnetId: !Ref 'HeadscalePublicSubnet'
       SourceDestCheck: true
       Tags:
@@ -115,38 +128,18 @@ Resources:
         Fn::Join:
           - ''
           - - "#!/bin/bash\n"
-            - "snap install yq\n"
             - "apt update\n"
-            - "apt install neovim net-tools -y\n"
+            - "apt install neovim -y\n"
             - "apt upgrade -y\n"
-            - wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v
-            - !Ref 'HeadscaleRelease'
-            - /headscale_
-            - !Ref 'HeadscaleRelease'
-            - "_linux_amd64.deb\n"
+            - "wget --output-document=headscale.deb https://github.com/juanfont/headscale/releases/download/v0.23.0-alpha9/headscale_0.23.0-alpha9_linux_amd64.deb\n"
             - "apt install ./headscale.deb -y\n"
-            - yq e '.server_url = "https://
-            - !Ref 'StackName'
-            - .
-            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
-            - ":443\"' -i /etc/headscale/config.yaml\n"
-            - "yq e '.listen_addr = \"0.0.0.0:443\"' -i /etc/headscale/config.yaml\n"
-            - yq e '.acme_email = "headscale@
-            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
-            - "\"' -i /etc/headscale/config.yaml\n"
-            - yq e '.tls_letsencrypt_hostname = "
-            - !Ref 'StackName'
-            - .
-            - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
-            - "\"' -i /etc/headscale/config.yaml\n"
-            - "yq e '.tls_letsencrypt_challenge_type = \"TLS-ALPN-01\"' -i /etc/headscale/config.yaml\n"
-            - yq e '.base_domain = "
-            - !Ref 'MagicDnsName'
-            - "\"' -i /etc/headscale/config.yaml\n"
-            - "f' -i /etc/headscale/config.yaml\n"
-            - yq e '.dns_config.nameservers = ["https://nextdns.io/
-            - !Ref 'NextDnsId'
-            - "\"]' -i /etc/headscale/config.yaml\n"
+            - "sed -i 's#server_url: http://127\\.0\\.0\\.1:8080#server_url: https://headscale\\.r6t\\.io:443#' /etc/headscale/config.yaml\n"
+            - "sed -i 's#listen_addr: 127\\.0\\.0\\.1:8080#listen_addr: 0\\.0\\.0\\.0:443#' /etc/headscale/config.yaml\n"
+            - "sed -i '/acme_email:/s/.*/acme_email: \"headscale@r6t.io\"/' /etc/headscale/config.yaml\n"
+            - "sed -i '/tls_letsencrypt_hostname:/s/.*/tls_letsencrypt_hostname: \"headscale.r6t.io\"/' /etc/headscale/config.yaml\nsed -i 's#tls_letsencrypt_challenge_type: HTTP-01#tls_letsencrypt_challenge_type:\
+              \ TLS-ALPN-01#' /etc/headscale/config.yaml\n"
+            - "sed -i 's#base_domain: #base_domain: magic.r6t.io#' /etc/headscale/config.yaml\n"
+            - "sed -i 's#nameservers:\\n - 1\\.1\\.1\\.1#nameservers:\\n - 2001:1608:10:25::1c04:b12f#' /etc/headscale/config.yaml\n"
             - "systemctl enable headscale\n"
             - "reboot\n"
     Type: AWS::EC2::Instance
@@ -177,19 +170,6 @@ Resources:
           Value: !Ref 'StackName'
       VpcId: !Ref 'HeadscaleVpc'
     Type: AWS::EC2::RouteTable
-  HeadscaleSecurityGroup:
-    Properties:
-      GroupDescription: Headscale EC2 Security Group
-      SecurityGroupIngress:
-        - CidrIpv6: ::/0
-          FromPort: 443
-          IpProtocol: tcp
-          ToPort: 443
-      Tags:
-        - Key: Name
-          Value: !Ref 'StackName'
-      VpcId: !Ref 'HeadscaleVpc'
-    Type: AWS::EC2::SecurityGroup
   HeadscaleSubnetRouteTableAssociation:
     Properties:
       RouteTableId: !Ref 'HeadscaleRouteTable'
