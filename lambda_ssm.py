@@ -43,13 +43,13 @@ def lambda_handler(event, context):
         
         elif event['RequestType'] == 'Delete':
             try:
-                ssm_client.delete_parameter(Name=ipv6_cidr_block_ssm_param_name)
+                ssm_client.delete_parameter(Name=ipv6_cidr_ssm_param_name)
             except ssm_client.exceptions.ParameterNotFound:
-                print(ipv6_cidr_block_ssm_param_name, " not found. Skipping delete.")
+                print(ipv6_cidr_ssm_param_name, " not found. Skipping delete.")
             try:
                 ssm_client.delete_parameter(Name=domain_name_ssm_param_name)
             except ssm_client.exceptions.ParameterNotFound:
-                print("/config/headscale/domainName not found. Skipping delete.")
+                print(domain_name_ssm_param_name, " not found. Skipping delete.")
             cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "CustomResourcePhysicalID")
 
     except Exception as e:

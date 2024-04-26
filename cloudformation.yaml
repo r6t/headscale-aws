@@ -347,11 +347,11 @@ Resources:
           \            hosted_zone = r53_client.get_hosted_zone(Id=hosted_zone_id)\n            domain_name = hosted_zone['HostedZone']['Name'].rstrip('.')\n            ssm_client.put_parameter(\n     \
           \               Name=domain_name_ssm_param_name,\n                    Value=domain_name,\n                    Type=\"String\",\n                    Overwrite=True\n                )\n        \
           \    \n            responseData = {\n                'Ipv6CidrBlock': ipv6_cidr_block,\n                'DomainName': domain_name\n            }\n            cfnresponse.send(event, context, cfnresponse.SUCCESS,\
-          \ responseData)\n        \n        elif event['RequestType'] == 'Delete':\n            try:\n                ssm_client.delete_parameter(Name=ipv6_cidr_block_ssm_param_name)\n            except\
-          \ ssm_client.exceptions.ParameterNotFound:\n                print(ipv6_cidr_block_ssm_param_name, \" not found. Skipping delete.\")\n            try:\n                ssm_client.delete_parameter(Name=domain_name_ssm_param_name)\n\
-          \            except ssm_client.exceptions.ParameterNotFound:\n                print(\"/config/headscale/domainName not found. Skipping delete.\")\n            cfnresponse.send(event, context,\
-          \ cfnresponse.SUCCESS, {}, \"CustomResourcePhysicalID\")\n\n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event, context, cfnresponse.FAILED,\
-          \ responseData, \"CustomResourcePhysicalID\")"
+          \ responseData)\n        \n        elif event['RequestType'] == 'Delete':\n            try:\n                ssm_client.delete_parameter(Name=ipv6_cidr_ssm_param_name)\n            except ssm_client.exceptions.ParameterNotFound:\n\
+          \                print(ipv6_cidr_ssm_param_name, \" not found. Skipping delete.\")\n            try:\n                ssm_client.delete_parameter(Name=domain_name_ssm_param_name)\n           \
+          \ except ssm_client.exceptions.ParameterNotFound:\n                print(domain_name_ssm_param_name, \" not found. Skipping delete.\")\n            cfnresponse.send(event, context, cfnresponse.SUCCESS,\
+          \ {}, \"CustomResourcePhysicalID\")\n\n    except Exception as e:\n        responseData = {'Message': str(e)}\n        cfnresponse.send(event, context, cfnresponse.FAILED, responseData, \"CustomResourcePhysicalID\"\
+          )"
       Handler: index.lambda_handler
       Role: !GetAtt 'SSMLambdaExecutionRole.Arn'
       Runtime: python3.8
