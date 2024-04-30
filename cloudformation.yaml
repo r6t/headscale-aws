@@ -1,13 +1,4 @@
 Description: Headscale IPv6-centric EC2 stack
-Outputs:
-  HeadscaleApplicationURL:
-    Description: Headscale application URL
-    Value: !Join
-      - ''
-      - - https://
-        - !Ref 'StackName'
-        - .
-        - !GetAtt 'TriggerSSMLambdaCustomResource.DomainName'
 Parameters:
   HeadscaleRelease:
     Default: '0.23.0-alpha9'
@@ -25,7 +16,7 @@ Parameters:
     Type: String
   StackName:
     Default: headscale
-    Description: Base name for resources. Meant to be headscale, changing can be useful for multiple stacks
+    Description: Base name for resources. Use the same name for the CF stack. Changing can be useful for multiple stacks
     Type: String
 Resources:
   AAAARecord:

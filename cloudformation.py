@@ -7,7 +7,7 @@ template.set_description("Headscale IPv6-centric EC2 stack")
 
 stack_name_parameter = template.add_parameter(Parameter(
     "StackName",
-    Description="Base name for resources. Meant to be headscale, changing can be useful for multiple stacks",
+    Description="Base name for resources. Use the same name for the CF stack. Changing can be useful for multiple stacks",
     Type="String",
     Default="headscale",
 ))
@@ -406,17 +406,6 @@ aaaa_record = template.add_resource(RecordSetType(
     Type="AAAA",
     TTL="60",
     ResourceRecords=[GetAtt(dns_lambda_invocation, "Ipv6Address")],
-))
-
-template.add_output(Output(
-    "HeadscaleApplicationURL",
-    Description="Headscale application URL",
-    Value=Join("", [
-        "https://",
-        Ref(stack_name_parameter),
-        ".",
-        GetAtt(ssm_lambda_invocation, "DomainName")
-    ])
 ))
 
 with open('cloudformation.yaml', 'w') as file:
